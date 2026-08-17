@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/refresh?scores=skip", "schedule": "0 12 * * *" }
+  ]
+}
