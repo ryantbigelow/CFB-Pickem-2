@@ -90,6 +90,8 @@ function Card({ p }: { p: LivePick }) {
             : p.period_clock ??
               new Date(p.kickoff).toLocaleString(undefined, {
                 weekday: "short",
+                month: "short",
+                day: "numeric",
                 hour: "numeric",
                 minute: "2-digit",
               })}
