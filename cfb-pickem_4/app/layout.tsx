@@ -27,6 +27,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <a href="/">Picks</a>
             <a href="/scoreboard">Scoreboard</a>
             <a href="/results">Results</a>
+            <a href="/history">History</a>
             <span className="spacer" />
             <span className="period">{label}</span>
           </nav>

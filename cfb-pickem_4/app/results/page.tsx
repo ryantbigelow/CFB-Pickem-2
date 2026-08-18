@@ -1,9 +1,7 @@
 import { db, activePeriod, GridRow, Payout } from "@/lib/db";
+import { money, winPct } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
-
-const money = (v: number) =>
-  `${v < 0 ? "−" : "+"}$${Math.abs(Math.round(v)).toLocaleString()}`;
 
 export default async function Results() {
   let active;
@@ -126,11 +124,7 @@ export default async function Results() {
                   <td>{p.name}</td>
                   <td>{p.wins}</td>
                   <td>{p.losses}</td>
-                  <td>
-                    {p.wins + p.losses
-                      ? ((p.wins / (p.wins + p.losses)) * 100).toFixed(1) + "%"
-                      : "—"}
-                  </td>
+                  <td>{winPct(p.wins, p.losses)}</td>
                   <td className={p.net_usd >= 0 ? "pos" : "neg"}>
                     {money(p.net_usd)}
                   </td>
