@@ -43,8 +43,10 @@ export async function GET(req: Request) {
 
   /* ---------- 1. lines ---------- */
   if (!scoresOnly) {
-    // force=true: this route is the manual/cron path, so it ignores the
-    // hourly throttle. It still records credits remaining.
+    // force=true: this route is the manual/cron path, so it still gets
+    // through when the automatic refresh would be paused for low credits.
+    // It does NOT skip the hourly floor — repeated hits on this URL (by
+    // hand, or a duplicate cron) still can't double-pull inside the hour.
     const lines = await refreshLinesIfStale(period, true);
     out.lines_refreshed = lines.refreshed;
     out.lines_updated = lines.updatedAt;

@@ -13,10 +13,19 @@
  * games have kicked off — if you reload and it's been an hour, you get fresh
  * numbers.
  *
- * The ONE exception is a hard credit floor, because the alternative failure is
- * worse: burning the month's budget in week two and then showing no lines at
- * all. Below CREDIT_FLOOR the auto-refresh pauses, cached lines keep showing,
- * and the picker says so out loud. A manual /api/refresh still works.
+ * THE HOURLY FLOOR IS UNCONDITIONAL. /api/refresh (the daily cron, and
+ * anyone who hits that URL by hand with the passphrase) also goes through
+ * this function, with `force=true` — but force only bypasses the
+ * low-credit pause below, never the clock. A repeated manual hit or a
+ * duplicate cron still can't double-pull inside the hour. Learned this one
+ * the hard way: the site went live and a night of manual troubleshooting
+ * hits burned 200+ credits before this floor applied to `force` too.
+ *
+ * The ONE thing force *does* bypass is a hard credit floor, because the
+ * alternative failure is worse: burning the month's budget in week two and
+ * then showing no lines at all. Below CREDIT_FLOOR the automatic (Picks-page)
+ * refresh pauses and says so out loud; a forced refresh still gets through,
+ * just capped at once an hour like everything else.
  *
  * BUDGET REALITY: hourly, unconditional, is up to 24 refreshes a day at 2
  * credits each — 48/day against 500/month. Heavy daily use could exhaust the
@@ -95,11 +104,18 @@ export async function refreshLinesIfStale(
     refreshed: false, reason, updatedAt, creditsLeft: credits,
   });
 
-  if (!force) {
-    // The rule: once per hour, on load. Nothing else.
-    if (Date.now() - freshest < LINES_STALE_AFTER_MS) return stop("fresh");
+  // The hourly floor is unconditional — even a forced call (the daily cron,
+  // or a manual hit on /api/refresh) will not double-pull within the hour.
+  // This is what actually stops the odds API bill from a repeated manual
+  // hit or a duplicate cron: force only ever meant "bypass the low-credit
+  // pause below," never "ignore the clock."
+  if (Date.now() - freshest < LINES_STALE_AFTER_MS) return stop("fresh");
 
-    // The one safety net. Running dry mid-season is worse than a stale line.
+  if (!force) {
+    // The one safety net for the automatic (Picks-page) path. Running dry
+    // mid-season is worse than a stale line. force bypasses this one on
+    // purpose — the cron and manual troubleshooting should still get
+    // through when credits are tight, just never more than once an hour.
     if (credits !== null && credits < CREDIT_FLOOR) return stop("low-credits");
   }
 
