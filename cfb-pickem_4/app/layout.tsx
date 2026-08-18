@@ -24,9 +24,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <div className="wrap">
           <nav>
             <span className="brand">CFB Pickem</span>
-            <a href="/">Picker</a>
-            <a href="/dashboard">Live</a>
+            <a href="/">Picks</a>
             <a href="/scoreboard">Scoreboard</a>
+            <a href="/results">Results</a>
             <span className="spacer" />
             <span className="period">{label}</span>
           </nav>

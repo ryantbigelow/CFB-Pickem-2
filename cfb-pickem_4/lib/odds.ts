@@ -65,6 +65,11 @@ async function call(path: string, params: Record<string, string>) {
  */
 export const CREDIT_FLOOR = 60;
 
+/** The free tier's monthly allotment. Display-only (the used/remaining
+ * counter on the Picks and Scoreboard pages) — CREDIT_FLOOR is what
+ * actually gates refreshing. */
+export const MONTHLY_CREDIT_BUDGET = 500;
+
 /**
  * Every upcoming NCAAF game with spreads and totals. 1 credit per market,
  * so this call costs 2. Use for the periodic board refresh, not per request.

@@ -6,7 +6,7 @@
  *
  * The tradeoff: it's undocumented. ESPN can change the shape without warning.
  * So everything below is defensive — if a field is missing we return null for
- * that game rather than throwing, and the dashboard shows a stale score instead
+ * that game rather than throwing, and the Scoreboard page shows a stale score instead
  * of a broken page. If scores ever stop updating, check this file first.
  */
 

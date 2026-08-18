@@ -1,14 +1,14 @@
 /**
- * Score syncing, shared by the dashboard and the refresh route.
+ * Score syncing, shared by the Scoreboard page and the refresh route.
  *
  * WHY THIS EXISTS INSTEAD OF A CRON
  * Vercel's free Hobby plan allows daily cron jobs only, so a 10-minute score
  * cron isn't available. It turns out we don't want one anyway: scores only
- * matter when somebody is watching, so the dashboard syncs on load and
+ * matter when somebody is watching, so the Scoreboard page syncs on load and
  * throttles itself. Nobody watching means no work done, which is strictly
  * better than polling ESPN around the clock.
  *
- * The dashboard auto-refreshes every 30s, so with STALE_AFTER at 25s an open
+ * The Scoreboard page auto-refreshes every 30s, so with STALE_AFTER at 25s an open
  * tab keeps scores current on its own.
  */
 
@@ -92,7 +92,7 @@ export async function syncScores(
     graded = await gradeFinished(periodId);
   } catch (e) {
     // ESPN is undocumented and unguaranteed. A failure here must never take
-    // the dashboard down — we just show whatever we last stored.
+    // the Scoreboard page down — we just show whatever we last stored.
     console.error("[sync] score sync failed:", e);
   }
 

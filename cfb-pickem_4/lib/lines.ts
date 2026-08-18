@@ -32,7 +32,13 @@
  */
 
 import { db } from "./db";
-import { fetchSlate, BOOK, lastRemaining, CREDIT_FLOOR } from "./odds";
+import {
+  fetchSlate,
+  BOOK,
+  lastRemaining,
+  CREDIT_FLOOR,
+  MONTHLY_CREDIT_BUDGET,
+} from "./odds";
 
 export const LINES_STALE_AFTER_MS = 60 * 60 * 1000; // once per hour
 
@@ -43,11 +49,22 @@ export type LinesResult = {
   creditsLeft: number | null;
 };
 
-async function readCredits(): Promise<number | null> {
+/** Read-only: the last credit count we saw, no API call. Safe to call from
+ * any page (Picks refreshes lines and gets this as a side effect; Scoreboard
+ * just wants to display it). */
+export async function readCredits(): Promise<number | null> {
   if (lastRemaining !== null) return lastRemaining;
   const { data } = await db()
     .from("app_state").select("value").eq("key", "odds_credits_remaining").maybeSingle();
   return data ? Number(data.value) : null;
+}
+
+/** "123 used · 377 left" for the odds-API-pulls counter, or null before
+ * we've ever made a call. */
+export function creditsSummary(creditsLeft: number | null): string | null {
+  if (creditsLeft === null) return null;
+  const used = Math.max(0, MONTHLY_CREDIT_BUDGET - creditsLeft);
+  return `${used} used · ${creditsLeft} left`;
 }
 
 async function writeCredits(n: number | null) {

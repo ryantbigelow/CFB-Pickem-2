@@ -49,15 +49,15 @@ read at build time, so a deployment that already exists will not pick them up.
 Go to **Deployments**, find the most recent one, click the **⋯** menu, and
 choose **Redeploy**.
 
-To check it worked, open your site. If the picker still says "Not connected
+To check it worked, open your site. If the Picks page still says "Not connected
 yet," a variable is missing or misspelled — the page names which one.
 
 ### About scores and Vercel's free plan
 
 Vercel's Hobby plan only allows **daily** cron jobs, so there is no scores cron.
-Instead the Live page fetches scores itself when you open it, throttled to once
-every 25 seconds, and does nothing at all when no game has kicked off. Since the
-page reloads every 30 seconds, an open tab stays current on its own.
+Instead the Scoreboard page fetches scores itself when you open it, throttled to
+once every 25 seconds, and does nothing at all when no game has kicked off. Since
+the page reloads every 30 seconds, an open tab stays current on its own.
 
 This is better than a cron anyway: scores update when somebody is actually
 watching, and cost nothing when nobody is. **You do not need to upgrade to Pro.**
@@ -134,10 +134,10 @@ integration.
 
 Three pages, no accounts:
 
-- **Picker** — the whole slate, four slots per game, taken ones showing who owns
+- **Picks** — the whole slate, four slots per game, taken ones showing who owns
   them. Anyone with the URL can use it.
-- **Dashboard** — live scores for picked games, and whether each pick is covering.
-- **Scoreboard** — the spreadsheet grid: W/L by week, season totals, money.
+- **Scoreboard** — live scores for picked games, and whether each pick is covering.
+- **Results** — the spreadsheet grid: W/L by week, season totals, money.
 
 Ryan enters everyone's picks; they arrive in the group text. Picks can always be
 changed, and every change is logged. Logins come later.
@@ -152,9 +152,9 @@ db/test.sql              the test suite that proves the schema works
 lib/odds.ts              fetches lines from The Odds API (credit-budgeted)
 lib/scores.ts            live scores from ESPN, plus win/loss grading
 lib/db.ts                server-only database access
-app/page.tsx             the picker
-app/dashboard/page.tsx   live scores
-app/scoreboard/page.tsx  the spreadsheet grid
+app/page.tsx             the picks board
+app/scoreboard/page.tsx  live scores
+app/results/page.tsx     the spreadsheet grid
 app/api/picks/route.ts   the only path that writes picks
 app/api/refresh/route.ts pulls lines + scores, grades finished games
 db/seed.sql              players, season, and the 18 weeks

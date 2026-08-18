@@ -26,12 +26,16 @@ banter out of the group text and into software is a regression, even if it works
 
 ## V1 scope — three pages, no accounts
 
-1. **The picker** — the whole slate, four slots per game, taken ones showing who
+1. **Picks** (`/`) — the whole slate, four slots per game, taken ones showing who
    owns them. Open to anyone with the URL; no login.
-2. **The live dashboard** — scores for picked games, updating, with each pick
-   showing whether it's currently covering.
-3. **The scoreboard** — the spreadsheet grid: W/L per player per week, season
-   totals, money owed.
+2. **Scoreboard** (`/scoreboard`) — live scores for picked games, updating, with
+   each pick showing whether it's currently covering.
+3. **Results** (`/results`) — the spreadsheet grid: W/L per player per week,
+   season totals, money owed.
+
+(These pages used to be called Picker / Live / Scoreboard, in that order —
+renamed August 2026. If you see those old names elsewhere in this repo's docs
+or comments, they mean the same pages.)
 
 **One person (Ryan) enters everyone's picks.** Picks arrive in the group text;
 he types them in. Later: logins so each player manages their own. Not now.
@@ -76,7 +80,7 @@ Make sure that's possible."*
 
 This matters more than it looks. A pick arrives by text — "I'll take Bama −7" —
 and gets typed in hours later, when the live line says −9. **The pool honors what
-was agreed in the text.** So the picker pre-fills the live number but always lets
+was agreed in the text.** So the Picks page pre-fills the live number but always lets
 Ryan override it. Never silently overwrite a manual line with an API value.
 
 ## Money
@@ -117,7 +121,7 @@ but right-sized for six family members.
 ## Resolved: editing and scores
 
 **Line on edit — the commissioner types it, pre-filled with the current line.**
-The picker suggests today's number and Ryan overwrites it with whatever was
+The Picks page suggests today's number and Ryan overwrites it with whatever was
 actually agreed in the group text. This applies to new picks and edits alike.
 Never auto-apply a line change to an existing pick.
 
@@ -135,7 +139,7 @@ on normalized name AND kickoff day, never name alone. Persist the resolved
 ## Scores sync on page load, NOT on a cron
 
 Vercel Hobby allows daily crons only, so a frequent score cron isn't available —
-and isn't wanted. `lib/sync.ts` pulls scores when the Live page renders,
+and isn't wanted. `lib/sync.ts` pulls scores when the Scoreboard page renders,
 throttled by `games.scores_updated` to once per 25s, and skips entirely when
 nothing has kicked off. The page auto-reloads every 30s, so an open tab stays
 current. `vercel.json` has ONE daily cron, and it only refreshes lines.
@@ -149,7 +153,7 @@ time and Ryan sees a red build.
 
 ## Verification
 
-`db/schema.sql` has been loaded into real Postgres and tested: the picker board,
+`db/schema.sql` has been loaded into real Postgres and tested: the Picks board,
 pick entry, editing with audit trail, slot release on edit, collision rejection,
 manual line override, live cover margins, the weekly grid, and the payout view
 reproducing all 20 historical payouts exactly. Re-run those if you touch the

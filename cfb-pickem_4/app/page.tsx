@@ -1,5 +1,5 @@
 import { db, activePeriod, players, Slot } from "@/lib/db";
-import { refreshLinesIfStale, ago } from "@/lib/lines";
+import { refreshLinesIfStale, ago, creditsSummary } from "@/lib/lines";
 import Picker, { GameGroup } from "./picker";
 
 export const dynamic = "force-dynamic";
@@ -71,9 +71,8 @@ export default async function Page() {
       <h1>{period.label}</h1>
       <p className="sub">
         {taken} of {target} picks in · lines {ago(lines.updatedAt)}
-        {lines.creditsLeft !== null && lines.creditsLeft < 120
-          ? ` · ${lines.creditsLeft} odds credits left`
-          : ""}
+        {creditsSummary(lines.creditsLeft) &&
+          ` · odds API: ${creditsSummary(lines.creditsLeft)}`}
         {lines.reason === "low-credits" && " — auto-refresh paused"}
         {order?.length ? (
           <>

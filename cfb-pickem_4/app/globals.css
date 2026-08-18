@@ -65,7 +65,7 @@ h1 { font-size: 21px; font-weight: 650; margin: 0 0 3px; letter-spacing: -0.01em
   border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
 }
 
-/* ---- picker ---- */
+/* ---- picks ---- */
 .game { padding: 14px 0; border-bottom: 1px solid var(--grid); }
 .game:last-child { border-bottom: none; }
 .matchup { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 10px; }
@@ -121,16 +121,24 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
 th {
   font-size: 11px; font-weight: 500; color: var(--muted); text-align: right;
   padding: 7px 9px; border-bottom: 1px solid var(--border); letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 th:first-child, td:first-child { text-align: left; }
-td { padding: 8px 9px; font-size: 13.5px; text-align: right; border-bottom: 1px solid var(--grid); color: var(--ink-2); }
+td { padding: 8px 9px; font-size: 13.5px; text-align: right; border-bottom: 1px solid var(--grid); color: var(--ink-2); white-space: nowrap; }
 td:first-child { color: var(--ink); font-weight: 550; }
 tr:last-child td { border-bottom: none; }
 tfoot td { font-weight: 650; color: var(--ink); border-top: 1px solid var(--line); }
 .pos { color: var(--pos); font-weight: 620; }
 .neg { color: var(--neg); font-weight: 620; }
 
-/* ---- dashboard ---- */
+/* Row/column headings stay on one line even on a phone — shrink instead of
+   wrapping, and let the .card wrapper's overflow-x scroll handle the rest. */
+@media (max-width: 480px) {
+  th { font-size: 9.5px; padding: 6px 5px; }
+  td { font-size: 12px; padding: 7px 5px; }
+}
+
+/* ---- scoreboard (live picks) ---- */
 .live { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .lg { background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 14px 16px; }
 .lg .top { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 9px; }
@@ -140,4 +148,8 @@ tfoot td { font-weight: 650; color: var(--ink); border-top: 1px solid var(--line
 .pill.cover { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
 .pill.lose { background: color-mix(in srgb, var(--neg) 16%, transparent); color: var(--neg); }
 .pill.push { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+
+/* Final-game hue on the Scoreboard tab: a glance tells you who covered. */
+.lg.graded-win { background: color-mix(in srgb, var(--good) 10%, var(--surface)); border-color: color-mix(in srgb, var(--good) 40%, var(--border)); }
+.lg.graded-loss { background: color-mix(in srgb, var(--neg) 10%, var(--surface)); border-color: color-mix(in srgb, var(--neg) 40%, var(--border)); }
 .empty { color: var(--muted); font-size: 13.5px; padding: 30px 0; text-align: center; }
