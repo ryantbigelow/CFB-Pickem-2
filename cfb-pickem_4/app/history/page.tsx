@@ -75,7 +75,13 @@ function careerTotals(): Career[] {
 
 /** A horizontal bar per row, diverging from a zero line — blue for
  * positive dollars, red for a loss, sized against a shared scale so
- * multiple charts on the page stay visually comparable. */
+ * multiple charts on the page stay visually comparable.
+ *
+ * Names are a plain HTML column, not SVG text laid out next to the bars.
+ * They used to live inside the same SVG as the bars, right next to the
+ * zero line — which meant a long enough bar (anyone's worst season) was
+ * drawn right on top of that same player's own name and hid it. A real
+ * DOM column can't be painted over by a sibling's rectangle. */
 function DivergingBars({
   rows,
   scale,
@@ -83,56 +89,69 @@ function DivergingBars({
   rows: { label: string; value: number }[];
   scale: number;
 }) {
-  const rowH = 24;
-  const height = rows.length * rowH;
-  const midX = 132; // px from the left where zero sits
-  const halfW = 130; // px available on each side of zero
+  const svgW = 320;
+  const midX = 160; // px from the left where zero sits
+  const halfW = 108; // px available on each side of zero, leaving room
+                      // at both outer edges for the $ label past the bar
 
   return (
-    <svg
-      viewBox={`0 0 400 ${height}`}
-      style={{ width: "100%", height: "auto", overflow: "visible" }}
-    >
-      <line
-        x1={midX} y1={0} x2={midX} y2={height}
-        style={{ stroke: "var(--grid)", strokeWidth: 1 }}
-      />
-      {rows.map((r, i) => {
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {rows.map((r) => {
         const w = (Math.abs(r.value) / scale) * halfW;
-        const y = i * rowH;
         const barX = r.value >= 0 ? midX : midX - w;
         return (
-          <g key={r.label}>
-            <text
-              x={midX - 8} y={y + rowH / 2 + 4} textAnchor="end"
-              style={{ fontSize: 11.5, fill: "var(--ink-2)" }}
+          <div
+            key={r.label}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "56px 1fr",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <div
+              style={{
+                textAlign: "right", fontSize: 11.5, color: "var(--ink-2)",
+                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }}
+              title={r.label}
             >
               {r.label}
-            </text>
-            <rect
-              x={barX} y={y + 4} width={Math.max(w, 1.5)} height={rowH - 10}
-              rx={3}
-              style={{ fill: r.value >= 0 ? "var(--pos)" : "var(--neg)" }}
-            />
-            <text
-              x={r.value >= 0 ? midX + w + 8 : midX - w - 8}
-              y={y + rowH / 2 + 4}
-              textAnchor={r.value >= 0 ? "start" : "end"}
-              style={{ fontSize: 11.5, fill: "var(--ink)", fontWeight: 620 }}
+            </div>
+            <svg
+              viewBox={`0 0 ${svgW} 22`}
+              style={{ width: "100%", height: 20, display: "block", overflow: "visible" }}
             >
-              {money(r.value)}
-            </text>
-          </g>
+              <line
+                x1={midX} y1={0} x2={midX} y2={22}
+                style={{ stroke: "var(--grid)", strokeWidth: 1 }}
+              />
+              <rect
+                x={barX} y={3} width={Math.max(w, 1.5)} height={16}
+                rx={3}
+                style={{ fill: r.value >= 0 ? "var(--pos)" : "var(--neg)" }}
+              />
+              <text
+                x={r.value >= 0 ? midX + w + 6 : midX - w - 6}
+                y={15}
+                textAnchor={r.value >= 0 ? "start" : "end"}
+                style={{ fontSize: 11, fill: "var(--ink)", fontWeight: 620 }}
+              >
+                {money(r.value)}
+              </text>
+            </svg>
+          </div>
         );
       })}
-    </svg>
+    </div>
   );
 }
 
 export default function History() {
   const career = careerTotals().sort((a, b) => b.net - a.net);
 
-  const totalPicks = HISTORY.reduce((s, r) => s + r.w + r.l, 0);
+  const totalW = career.reduce((s, c) => s + c.w, 0);
+  const totalL = career.reduce((s, c) => s + c.l, 0);
   const redistributed = SEASONS.reduce((sum, season) => {
     const positives = HISTORY.filter((r) => r.season === season && r.net > 0);
     return sum + positives.reduce((s, r) => s + r.net, 0);
@@ -157,20 +176,26 @@ export default function History() {
   return (
     <>
       <h1>History</h1>
-      <p className="sub">
-        Four seasons before this app existed, back when it was all one
-        spreadsheet. Records don't change. Reputations shouldn't either.
+      <p className="sub" style={{ fontSize: 14, lineHeight: 1.65 }}>
+        The pool has gone {totalW}–{totalL} against the spread since 2022. A
+        coin flip would have done better. Nobody has to be good at this for
+        the game to be fun — but it does mean the money is decided by who is
+        least bad, not who is good.
       </p>
 
       <div className="card">
         <div className="stats">
           <div className="stat">
-            <div className="n">{SEASONS.length}</div>
-            <div className="l">seasons archived</div>
+            <div className="n">{totalW}–{totalL}</div>
+            <div className="l">record vs. the spread</div>
           </div>
           <div className="stat">
-            <div className="n">{totalPicks}</div>
-            <div className="l">picks graded</div>
+            <div className="n">{winPct(totalW, totalL)}</div>
+            <div className="l">overall win rate</div>
+          </div>
+          <div className="stat">
+            <div className="n">{SEASONS.length}</div>
+            <div className="l">seasons archived</div>
           </div>
           <div className="stat">
             <div className="n">${redistributed.toLocaleString()}</div>
