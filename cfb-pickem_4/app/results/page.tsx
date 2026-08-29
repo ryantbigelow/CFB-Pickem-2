@@ -1,5 +1,5 @@
 import { db, activePeriod, GridRow, Payout } from "@/lib/db";
-import { money, winPct } from "@/lib/format";
+import { money } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,13 @@ export default async function Results() {
       const l = rows.filter((r) => r.name === n).reduce((s, r) => s + r.l, 0);
       return [n, { w, l }];
     })
+  );
+
+  // net_usd per player, keyed by name, for the money row under Total —
+  // same layout as Ryan's old spreadsheet: one cell, spanning both of a
+  // player's W/L columns, centered directly beneath their season total.
+  const netByName = Object.fromEntries(
+    (payouts as Payout[]).map((p) => [p.name, p.net_usd])
   );
 
   const anyPlayed = rows.some((r) => r.w + r.l > 0);
@@ -95,54 +102,27 @@ export default async function Results() {
                 <td key={n + "l"}>{totals[n].l}</td>,
               ])}
             </tr>
+            {payouts.length > 0 && (
+              <tr>
+                <td>Money</td>
+                {names.map((n) => {
+                  const net = netByName[n];
+                  return (
+                    <td
+                      key={n}
+                      colSpan={2}
+                      className={net === undefined ? undefined : net >= 0 ? "pos" : "neg"}
+                      style={{ textAlign: "center" }}
+                    >
+                      {net === undefined ? "" : money(net)}
+                    </td>
+                  );
+                })}
+              </tr>
+            )}
           </tfoot>
         </table>
       </div>
-
-      {/* Where everyone actually stands: each player is betting $10 a game
-          against every other player, so this nets each of their records
-          against the whole pool at once. Zero-sum by construction — the
-          Pool row always lands on $0. */}
-      {payouts.length > 0 && (
-        <div className="card" style={{ overflowX: "auto" }}>
-          <p className="sub" style={{ marginBottom: 10 }}>
-            Money — $10/game, each player against the whole pool
-          </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Player</th>
-                <th>W</th>
-                <th>L</th>
-                <th>Win %</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody>
-              {payouts.map((p) => (
-                <tr key={p.name}>
-                  <td>{p.name}</td>
-                  <td>{p.wins}</td>
-                  <td>{p.losses}</td>
-                  <td>{winPct(p.wins, p.losses)}</td>
-                  <td className={p.net_usd >= 0 ? "pos" : "neg"}>
-                    {money(p.net_usd)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>Pool</td>
-                <td>{payouts.reduce((s, p) => s + p.wins, 0)}</td>
-                <td>{payouts.reduce((s, p) => s + p.losses, 0)}</td>
-                <td>—</td>
-                <td>$0</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
     </>
   );
 }
