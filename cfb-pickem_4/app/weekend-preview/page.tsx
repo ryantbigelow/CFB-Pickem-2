@@ -28,25 +28,18 @@ export default async function WeekendPreview() {
   }
   if (!active) return <p className="sub">No active season.</p>;
 
-  const [{ data: preview, error: previewError }, { data: lock, error: lockError }] =
+  // Plain array selects, not .maybeSingle() -- a real row, with this exact
+  // period_id, proved reachable through an unfiltered select in the same
+  // request while the .maybeSingle() version of this same filter came back
+  // empty. Whatever's behind that (PostgREST's singular-response content
+  // negotiation is the leading suspect), grabbing [0] out of an ordinary
+  // array response sidesteps it rather than chasing it further.
+  const [{ data: previewRows, error: previewError }, { data: lockRows, error: lockError }] =
     await Promise.all([
-      db()
-        .from("weekend_previews")
-        .select("*")
-        .eq("period_id", active.period.id)
-        .maybeSingle(),
-      db()
-        .from("weekend_preview_locks")
-        .select("*")
-        .eq("period_id", active.period.id)
-        .maybeSingle(),
+      db().from("weekend_previews").select("*").eq("period_id", active.period.id),
+      db().from("weekend_preview_locks").select("*").eq("period_id", active.period.id),
     ]);
 
-  // A real database error (wrong key, RLS denial, a typo'd table name)
-  // used to look IDENTICAL to "nothing generated yet" -- both just left
-  // `preview` null, since neither query's `error` was ever checked. That
-  // silence is exactly what turned one bug into a long back-and-forth;
-  // surface it instead of guessing again next time.
   if (previewError) {
     return <p className="sub">Database error loading the preview: {previewError.message}</p>;
   }
@@ -54,15 +47,9 @@ export default async function WeekendPreview() {
     console.error("[weekend-preview] weekend_preview_locks query failed:", lockError.message);
   }
 
-  if (!preview) {
-    // TEMPORARY, only reached on the empty-state path: an unfiltered read
-    // of the whole table, so we can tell "the table looks empty to the
-    // app at all" apart from "this one filter finds nothing" -- the
-    // filtered query alone couldn't tell those two apart.
-    const { data: allRows, error: allRowsError } = await db()
-      .from("weekend_previews")
-      .select("period_id,generated_at");
+  const preview = previewRows?.[0] as PreviewRow | undefined;
 
+  if (!preview) {
     return (
       <>
         <h1>Weekend Preview</h1>
@@ -73,26 +60,12 @@ export default async function WeekendPreview() {
             week&apos;s picks are in.
           </div>
         </div>
-        {/* TEMPORARY: tracking down a case where a confirmed row in
-            weekend_previews still doesn't show up here. Safe to show --
-            NEXT_PUBLIC_SUPABASE_URL is a public var (browsers already see
-            it), and a period id isn't sensitive. Remove once resolved. */}
-        <p className="hint" style={{ marginTop: 14 }}>
-          debug — supabase: {process.env.NEXT_PUBLIC_SUPABASE_URL ?? "(unset)"} · queried
-          period_id: {active.period.id}
-        </p>
-        <p className="hint">
-          unfiltered read of weekend_previews — error:{" "}
-          {allRowsError ? JSON.stringify(allRowsError) : "none"} · rows:{" "}
-          {JSON.stringify(allRows)}
-        </p>
       </>
     );
   }
 
-  const row = preview as PreviewRow;
-  const lockRow = lock as LockRow | null;
-  const players = row.players ?? [];
+  const lockRow = lockRows?.[0] as LockRow | undefined;
+  const players = preview.players ?? [];
 
   return (
     <>
@@ -100,7 +73,7 @@ export default async function WeekendPreview() {
       <p className="sub">{active.period.label}</p>
 
       <div className="card">
-        <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.65 }}>{row.intro}</p>
+        <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.65 }}>{preview.intro}</p>
       </div>
 
       {lockRow && (

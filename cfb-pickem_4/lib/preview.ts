@@ -38,12 +38,14 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
   const s = db();
 
   if (!force) {
+    // Plain array select, not .maybeSingle() -- see app/weekend-preview/page.tsx
+    // for why: a real row was provably reachable through a plain select
+    // while .maybeSingle() on the identical filter came back empty.
     const { data: existing } = await s
       .from("weekend_previews")
       .select("id")
-      .eq("period_id", period.id)
-      .maybeSingle();
-    if (existing) return { skipped: true, reason: "already generated for this period" };
+      .eq("period_id", period.id);
+    if (existing?.length) return { skipped: true, reason: "already generated for this period" };
   }
 
   const roster = await players();
