@@ -214,7 +214,13 @@ async function callClaude(data: unknown): Promise<GeneratedContent> {
   }
 
   const body = await res.json();
-  const text: string = body.content?.[0]?.text ?? "";
+  // Find the actual text block by type, don't assume it's content[0] --
+  // a thinking block (or anything else) sorting first would otherwise
+  // silently hand us `undefined`, coerced to an empty string, which is
+  // exactly what produced 'Model response wasn't valid JSON: ' (nothing
+  // after the colon) the first time this ran for real.
+  const textBlock = (body.content ?? []).find((b: any) => b.type === "text");
+  const text: string = textBlock?.text ?? "";
   // Strip a markdown code fence if the model added one despite being told
   // not to -- cheap insurance, since JSON.parse has zero tolerance for it.
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
@@ -223,7 +229,11 @@ async function callClaude(data: unknown): Promise<GeneratedContent> {
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    throw new Error(`Model response wasn't valid JSON: ${text.slice(0, 300)}`);
+    const blockTypes = (body.content ?? []).map((b: any) => b.type).join(",") || "none";
+    throw new Error(
+      `Model response wasn't valid JSON (stop_reason=${body.stop_reason}, ` +
+        `content blocks=[${blockTypes}]): ${text.slice(0, 300)}`
+    );
   }
   if (!parsed.intro || !Array.isArray(parsed.players) || !parsed.lock?.ref || !parsed.lock?.call) {
     throw new Error("Model response is missing required fields.");
