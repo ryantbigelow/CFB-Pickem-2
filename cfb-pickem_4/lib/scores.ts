@@ -51,15 +51,25 @@ export async function fetchScores(date?: string): Promise<ScoreUpdate[]> {
     const away = comp.competitors?.find((c: any) => c.homeAway === "away");
     if (!home || !away) return [];
 
+    const status = toStatus(comp.status);
+    // ESPN reports the literal string "0" for both teams before kickoff --
+    // a placeholder, not a real score. toScore() alone can't tell that
+    // apart from an actual 0-0 game in progress, so a scheduled game was
+    // showing (and grading logic aside, *displaying*) a fake 0-0 that
+    // then evaluated as covering/losing against the pick's line before a
+    // single snap had been played. Only trust the number once the game
+    // has actually started.
+    const started = status !== "scheduled";
+
     return [
       {
         espnId: String(ev.id),
         kickoff: ev.date,
         homeTeam: home.team?.displayName ?? "",
         awayTeam: away.team?.displayName ?? "",
-        homeScore: toScore(home.score),
-        awayScore: toScore(away.score),
-        status: toStatus(comp.status),
+        homeScore: started ? toScore(home.score) : null,
+        awayScore: started ? toScore(away.score) : null,
+        status,
         clock: toClock(comp.status),
       },
     ];
