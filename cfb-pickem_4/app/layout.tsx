@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { ReactNode } from "react";
 import { activePeriod } from "@/lib/db";
+import { APP_TIMEZONE, isSaturdayIn } from "@/lib/time";
 
 export const metadata = {
   title: "CFB Pickem",
@@ -24,6 +25,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <div className="wrap">
           <nav>
             <span className="brand">CFB Pickem</span>
+            {isSaturdayIn(APP_TIMEZONE) && (
+              <a href="/weekend-preview">Weekend Preview</a>
+            )}
             <a href="/">Picks</a>
             <a href="/scoreboard">Scoreboard</a>
             <a href="/results">Results</a>

@@ -1,77 +1,6 @@
 import { money, winPct } from "@/lib/format";
-
-/**
- * The archive. Four seasons before this app existed, when the whole
- * operation ran on Ryan's spreadsheet.
- *
- * This table is the same fixture db/test.sql uses to prove the payout
- * formula reproduces the old spreadsheet exactly (see "TEST 7" there) —
- * it's real history, just at season grain. Nobody logged individual
- * games back then, so that's the finest detail available: each player's
- * win/loss record and net dollars for each season they played.
- *
- * Static on purpose. Nothing here changes, so nothing here touches the
- * database.
- */
-const HISTORY: { season: string; name: string; w: number; l: number; net: number }[] = [
-  { season: "22-23", name: "Luke", w: 11, l: 17, net: -140 },
-  { season: "22-23", name: "Ryan", w: 14, l: 14, net: 160 },
-  { season: "22-23", name: "Mark", w: 13, l: 16, net: 10 },
-  { season: "22-23", name: "Steve", w: 13, l: 15, net: 60 },
-  { season: "22-23", name: "Scott", w: 12, l: 17, net: -90 },
-
-  { season: "23-24", name: "Luke", w: 15, l: 13, net: 180 },
-  { season: "23-24", name: "Ryan", w: 9, l: 19, net: -420 },
-  { season: "23-24", name: "Mark", w: 11, l: 18, net: -270 },
-  { season: "23-24", name: "Steve", w: 18, l: 11, net: 430 },
-  { season: "23-24", name: "Scott", w: 14, l: 14, net: 80 },
-
-  { season: "24-25", name: "Luke", w: 13, l: 20, net: -270 },
-  { season: "24-25", name: "Ryan", w: 17, l: 16, net: 130 },
-  { season: "24-25", name: "Mark", w: 15, l: 17, net: -20 },
-  { season: "24-25", name: "Steve", w: 16, l: 17, net: 30 },
-  { season: "24-25", name: "Scott", w: 17, l: 16, net: 130 },
-
-  { season: "25-26", name: "Nick", w: 16, l: 18, net: 160 },
-  { season: "25-26", name: "Ryan", w: 11, l: 23, net: -340 },
-  { season: "25-26", name: "Mark", w: 13, l: 20, net: -90 },
-  { season: "25-26", name: "Steve", w: 18, l: 16, net: 360 },
-  { season: "25-26", name: "Scott", w: 13, l: 20, net: -90 },
-];
-
-const SEASONS = [...new Set(HISTORY.map((r) => r.season))].sort();
-
-type Career = {
-  name: string;
-  seasons: number;
-  w: number;
-  l: number;
-  net: number;
-  perSeason: number;
-  spread: number; // this player's best season win% minus their worst
-};
-
-function careerTotals(): Career[] {
-  const byName = new Map<string, typeof HISTORY>();
-  for (const r of HISTORY) {
-    byName.set(r.name, [...(byName.get(r.name) ?? []), r]);
-  }
-  return [...byName.entries()].map(([name, rows]) => {
-    const w = rows.reduce((s, r) => s + r.w, 0);
-    const l = rows.reduce((s, r) => s + r.l, 0);
-    const net = rows.reduce((s, r) => s + r.net, 0);
-    const pcts = rows.map((r) => (r.w / (r.w + r.l)) * 100);
-    return {
-      name,
-      seasons: rows.length,
-      w,
-      l,
-      net,
-      perSeason: net / rows.length,
-      spread: Math.max(...pcts) - Math.min(...pcts),
-    };
-  });
-}
+import { HISTORY, LEGACY_SEASONS as SEASONS, careerTotals } from "@/lib/legacy-history";
+import { db } from "@/lib/db";
 
 /** A horizontal bar per row, diverging from a zero line — blue for
  * positive dollars, red for a loss, sized against a shared scale so
@@ -147,7 +76,33 @@ function DivergingBars({
   );
 }
 
-export default function History() {
+type LockRow = {
+  id: string;
+  season: string;
+  period: string;
+  player: string;
+  bet: string;
+  lock_call: "win" | "lose";
+  call_correct: boolean | null;
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function History() {
+  // Best-effort: the archived seasons below need no database at all, so
+  // this page should still render them even if Supabase isn't configured
+  // yet, or migrate-003.sql (which adds weekend_preview_locks) hasn't been
+  // run. A missing AI-lock section beats a broken History page.
+  let locks: LockRow[] = [];
+  try {
+    const { data } = await db().from("weekend_preview_locks").select("*");
+    locks = (data ?? []) as LockRow[];
+  } catch {
+    locks = [];
+  }
+  const gradedLocks = locks.filter((l) => l.call_correct !== null);
+  const locksRight = gradedLocks.filter((l) => l.call_correct).length;
+
   const career = careerTotals().sort((a, b) => b.net - a.net);
 
   const totalW = career.reduce((s, c) => s + c.w, 0);
@@ -392,6 +347,60 @@ export default function History() {
           </div>
         </div>
       </div>
+
+      {/* ---- the AI's track record ---- */}
+      {locks.length > 0 && (
+        <div className="card" style={{ overflowX: "auto" }}>
+          <p className="sub" style={{ marginBottom: 10 }}>
+            The AI Lock of the Week — the tape doesn&apos;t lie
+          </p>
+          <p style={{ margin: "0 0 14px", fontSize: 14 }}>
+            {gradedLocks.length > 0 ? (
+              <>
+                <strong>
+                  {locksRight}-{gradedLocks.length - locksRight}
+                </strong>{" "}
+                ({winPct(locksRight, gradedLocks.length - locksRight)}) calling its
+                own confident Lock of the Week — {locksRight >= gradedLocks.length - locksRight
+                  ? "so far, better than it has any right to be."
+                  : "so, about that confidence."}
+              </>
+            ) : (
+              "No locks graded yet this season — check back once games go final."
+            )}
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Season</th>
+                <th>Week</th>
+                <th>Player</th>
+                <th>The Call</th>
+                <th>Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...locks].reverse().map((l) => (
+                <tr key={l.id}>
+                  <td>{l.season}</td>
+                  <td>{l.period}</td>
+                  <td>{l.player}</td>
+                  <td>
+                    {l.bet} — {l.lock_call === "win" ? "covers" : "busts"}
+                  </td>
+                  <td
+                    className={
+                      l.call_correct === null ? undefined : l.call_correct ? "pos" : "neg"
+                    }
+                  >
+                    {l.call_correct === null ? "pending" : l.call_correct ? "✓ right" : "✗ wrong"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <p className="hint" style={{ marginTop: 4 }}>
         This is season-level history only — no per-game detail survives from

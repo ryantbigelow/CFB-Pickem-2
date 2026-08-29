@@ -1,8 +1,9 @@
 /**
  * Refresh: pull lines, pull scores, grade whatever finished.
  *
- * Call it from a Vercel Cron (vercel.json) or just hit the URL. Guarded by the
- * same passphrase as the write path, passed as ?key=.
+ * Call it from a Vercel Cron (vercel.json) or just hit the URL with
+ * ?key=<passphrase>. Vercel's own cron trigger is authorized differently —
+ * see lib/cronAuth.ts — since a scheduled request never carries ?key=.
  *
  * CREDIT BUDGET: the odds call costs 2 credits against a 500/month free tier,
  * so refresh lines a few times a day, NOT on every page load. Scores come from
@@ -14,13 +15,14 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { refreshLinesIfStale } from "@/lib/lines";
 import { syncScores, gradeFinished } from "@/lib/sync";
+import { authorizedForCron } from "@/lib/cronAuth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  if (url.searchParams.get("key") !== process.env.PICK_PASSPHRASE)
+  if (!authorizedForCron(req, url.searchParams.get("key")))
     return NextResponse.json({ error: "Wrong key." }, { status: 401 });
 
   // ?scores=skip -> lines only (the daily cron); ?scores=only -> skip the odds call

@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/refresh?scores=skip", "schedule": "0 12 * * *" }
+    { "path": "/api/refresh?scores=skip", "schedule": "0 12 * * *" },
+    { "path": "/api/generate-preview", "schedule": "0 12 * * 6" }
   ]
 }

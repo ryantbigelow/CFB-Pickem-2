@@ -402,3 +402,48 @@ select a.season_id, s.label as season, a.player_id, pl.name,
 from agg a
 join seasons s  on s.id = a.season_id
 join players pl on pl.id = a.player_id;
+
+
+-- ---- PAGE 4: the Weekend Preview -----------------------------
+-- A sassy AI-generated summary of the week's picks, regenerated every
+-- Saturday morning, plus one confident "Lock of the Week" call. Nothing
+-- computed is duplicated: lock_pick_id points at a real row in picks, so
+-- whether the call hit is read back through the join below, never stored
+-- twice -- the same "never store computed totals" rule the payout views
+-- already follow.
+create table weekend_previews (
+  id           uuid primary key default gen_random_uuid(),
+  period_id    uuid not null references periods(id) on delete cascade unique,
+  generated_at timestamptz not null default now(),
+
+  intro        text  not null,
+  players      jsonb not null,   -- [{ "name": "...", "blurb": "..." }, ...]
+
+  lock_pick_id uuid references picks(id),
+  lock_call    text check (lock_call in ('win','lose')),
+  lock_blurb   text
+);
+
+-- Whether each week's AI Lock actually hit, joined back to the real pick.
+-- A push is neither a hit nor a miss -- excluded, same as everywhere else
+-- pushes are voided.
+create or replace view weekend_preview_locks as
+select
+  wp.id, wp.period_id, s.id as season_id, s.label as season,
+  pe.seq, pe.label as period,
+  pl.name as player,
+  describe_pick(pk.game_id, pk.market, pk.side, pk.line, pk.price) as bet,
+  wp.lock_call, pk.result,
+  case
+    when pk.result is null or pk.result in ('push','void') then null
+    when wp.lock_call = 'win'  and pk.result = 'win'  then true
+    when wp.lock_call = 'lose' and pk.result = 'loss' then true
+    else false
+  end as call_correct,
+  wp.lock_blurb, wp.generated_at
+from weekend_previews wp
+join periods pe on pe.id = wp.period_id
+join seasons s  on s.id = pe.season_id
+left join picks pk   on pk.id = wp.lock_pick_id
+left join players pl on pl.id = pk.player_id
+order by pe.seq;

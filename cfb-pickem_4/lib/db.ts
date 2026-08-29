@@ -60,6 +60,8 @@ export type LivePick = {
   status: string;
   period_clock: string | null;
   kickoff: string;
+  market: "spread" | "total";
+  side: "home" | "away" | "over" | "under";
   bet: string;
   line: number;
   result: string | null;

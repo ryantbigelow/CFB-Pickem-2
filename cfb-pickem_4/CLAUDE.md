@@ -22,9 +22,14 @@ So: no bot, no shot clock, no nagging, no automated trash talk. When you're
 tempted to add automation that "improves engagement," don't. Anything that moves
 banter out of the group text and into software is a regression, even if it works.
 
+**The one deliberate exception is the Weekend Preview** (see below) — Ryan
+asked for that automation explicitly, by name, with real specifics about
+tone and content. It's a carve-out, not a precedent: it doesn't license
+adding more automated content elsewhere on your own initiative.
+
 ---
 
-## V1 scope — three pages, no accounts
+## V1 scope — no accounts
 
 1. **Picks** (`/`) — the whole slate, four slots per game, taken ones showing who
    owns them. Open to anyone with the URL; no login.
@@ -32,10 +37,15 @@ banter out of the group text and into software is a regression, even if it works
    each pick showing whether it's currently covering.
 3. **Results** (`/results`) — the spreadsheet grid: W/L per player per week,
    season totals, money owed.
+4. **History** (`/history`) — the four archived pre-app seasons: an all-time
+   leaderboard, charts, a "record book" of superlatives, and the AI Lock of the
+   Week's track record.
+5. **Weekend Preview** (`/weekend-preview`) — Saturdays only. See its own
+   section below; it's the one deliberate exception to "no bot."
 
-(These pages used to be called Picker / Live / Scoreboard, in that order —
-renamed August 2026. If you see those old names elsewhere in this repo's docs
-or comments, they mean the same pages.)
+(Picks/Scoreboard/Results used to be called Picker / Live / Scoreboard, in that
+order — renamed August 2026. If you see those old names elsewhere in this
+repo's docs or comments, they mean the same pages.)
 
 **One person (Ryan) enters everyone's picks.** Picks arrive in the group text;
 he types them in. Later: logins so each player manages their own. Not now.
@@ -142,10 +152,60 @@ Vercel Hobby allows daily crons only, so a frequent score cron isn't available �
 and isn't wanted. `lib/sync.ts` pulls scores when the Scoreboard page renders,
 throttled by `games.scores_updated` to once per 25s, and skips entirely when
 nothing has kicked off. The page auto-reloads every 30s, so an open tab stays
-current. `vercel.json` has ONE daily cron, and it only refreshes lines.
+current. `vercel.json` has two crons: the daily lines refresh, and the weekly
+Weekend Preview generation (below) — both fire at most once a day on the days
+they fire at all, which is what Hobby actually requires (not "one cron total").
 
-Do not reintroduce a frequent cron; it will fail the Hobby plan check at deploy
-time and Ryan sees a red build.
+Do not reintroduce a *frequent* cron; it will fail the Hobby plan check at
+deploy time and Ryan sees a red build.
+
+## Cron requests need CRON_SECRET, not just ?key=
+
+Both `/api/refresh` and `/api/generate-preview` accept a human hitting the URL
+with `?key=<PICK_PASSPHRASE>`, **or** Vercel's own Cron trigger, checked via
+`lib/cronAuth.ts`. Vercel signs its cron requests with
+`Authorization: Bearer $CRON_SECRET` automatically, but only once a
+`CRON_SECRET` env var exists on the project — without it, a scheduled request
+carries no credential at all and gets the same 401 a wrong passphrase would.
+`/api/refresh`'s cron almost certainly ran into exactly this for a while before
+`CRON_SECRET` was added — if lines ever look stale for a day found long after
+this fix shipped, check that `CRON_SECRET` is actually still set in Vercel
+before assuming something else broke.
+
+## Weekend Preview — the one deliberate automation
+
+Every Saturday morning (`vercel.json`'s second cron → `/api/generate-preview`
+→ `lib/preview.ts`), the app hands Claude this pool's own data — this week's
+picks, season records, last period's (or last *season's*, on a season's first
+period — `lib/legacy-history.ts`) results, and each player's betting tendencies
+— and asks for a sassy recap plus one confident "AI Lock of the Week" call.
+The result is stored once in `weekend_previews`; the page only ever reads it.
+
+**Never let a page view trigger generation.** This mirrors the odds-credit
+leak fixed earlier: `/api/generate-preview` is the only caller of the Claude
+API for this feature, gated behind cron/passphrase auth, and it's a no-op if a
+preview already exists for the period (unless `?force=1`). If you're ever
+tempted to add a "generate on demand if missing" fallback on the page itself,
+don't — that's exactly the failure mode that already cost real money once.
+
+**Grounding, not real handicapping.** The system prompt in `lib/preview.ts`
+explicitly forbids inventing stats about real teams — every number it's
+allowed to use comes from this pool's own database (which we can verify),
+never from the model's outside "knowledge" of actual college football (which
+we can't). The "Lock of the Week" is comedy with real numbers behind it, not
+a real prediction.
+
+**"Is it Saturday" is timezone-explicit** (`lib/time.ts`, `APP_TIMEZONE =
+"America/Chicago"`) — computed the same way regardless of what timezone the
+server process happens to run in, the same ambiguity that caused the
+kickoff-time bug this app used to have. This is a *shared* fact (same answer
+for every viewer), unlike a kickoff time, so it's fine to compute server-side
+without a client component.
+
+**The once-a-Saturday redirect lives in `middleware.ts`**, using a cookie
+holding the date (not a plain boolean) so it self-resets every new Saturday
+with no cleanup job needed. No accounts exist in this app, so a cookie (per
+browser) is the same "who's asking" proxy the rest of the app already uses.
 
 ## Open questions — ask Ryan, don't guess
 
@@ -158,3 +218,11 @@ pick entry, editing with audit trail, slot release on edit, collision rejection,
 manual line override, live cover margins, the weekly grid, and the payout view
 reproducing all 20 historical payouts exactly. Re-run those if you touch the
 payout view, `draft_position()`, or the audit triggers.
+
+**TEST 9** covers `weekend_preview_locks`: a Lock call matching its pick's
+result (both directions), missing it, an ungraded pick, and a push — all
+graded correctly against a fresh load of `schema.sql`. **Not yet covered:** an
+actual call to `lib/preview.ts` against a real Anthropic key (nothing in this
+repo can safely fabricate an API key to test that end-to-end) — if the stored
+JSON from a real generation ever looks wrong, that's the untested seam to
+check first.

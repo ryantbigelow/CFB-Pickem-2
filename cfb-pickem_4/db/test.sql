@@ -133,3 +133,55 @@ from payouts po join hist h on h.season=po.season and h.nm=po.name;
 \echo '=== TEST 8: scoreboard grid, spreadsheet-style ==='
 select period, name, w, l from weekly_grid
 where season_id=(select id from seasons where label='24-25') order by name;
+
+\echo ''
+\echo '=== TEST 9: weekend_preview_locks grades a Lock of the Week correctly ==='
+-- Exercises every branch of the case expression: call matches result (both
+-- directions), call misses, a push, and a still-ungraded pick. Uses real
+-- picks already sitting in the fixture above (period 'all', from TEST 7),
+-- not new data, so this never depends on the current live season's state.
+do $$
+declare
+  p_win_pick  uuid;
+  p_loss_pick uuid;
+  p_period    uuid;
+begin
+  select id, period_id into p_win_pick, p_period from picks where result = 'win' limit 1;
+  select id into p_loss_pick from picks where result = 'loss' and period_id = p_period limit 1;
+
+  insert into weekend_previews (period_id, intro, players, lock_pick_id, lock_call, lock_blurb)
+  values (p_period, 'test', '[]'::jsonb, p_win_pick, 'win', 'win-pick, called win -> should be CORRECT')
+  on conflict (period_id) do update set lock_pick_id = excluded.lock_pick_id,
+    lock_call = excluded.lock_call, lock_blurb = excluded.lock_blurb;
+end $$;
+
+select 'win pick, call=win (expect t)' as case, call_correct
+from weekend_preview_locks where lock_blurb like 'win-pick%';
+
+update weekend_previews wp set lock_call = 'lose', lock_blurb = 'win-pick, called lose -> should be WRONG'
+from picks pk where wp.lock_pick_id = pk.id and pk.result = 'win' and wp.intro = 'test';
+select 'win pick, call=lose (expect f)' as case, call_correct
+from weekend_preview_locks where lock_blurb like 'win-pick%';
+
+update weekend_previews set lock_pick_id = (select id from picks where result = 'loss' limit 1),
+       lock_call = 'lose', lock_blurb = 'loss-pick, called lose -> should be CORRECT'
+where intro = 'test';
+select 'loss pick, call=lose (expect t)' as case, call_correct
+from weekend_preview_locks where lock_blurb like 'loss-pick%';
+
+update weekend_previews set lock_pick_id = (select id from picks where result is null limit 1),
+       lock_call = 'win', lock_blurb = 'ungraded pick -> should be PENDING (null)'
+where intro = 'test';
+select 'ungraded pick (expect null)' as case, call_correct
+from weekend_preview_locks where lock_blurb like 'ungraded%';
+
+-- Pushes are voided everywhere else in this app; the Lock should agree.
+update picks set result = 'push' where id = (select id from picks where result = 'win' limit 1);
+update weekend_previews set lock_pick_id = (select id from picks where result = 'push' limit 1),
+       lock_call = 'win', lock_blurb = 'push pick -> should be PENDING (null)'
+where intro = 'test';
+select 'push pick (expect null)' as case, call_correct
+from weekend_preview_locks where lock_blurb like 'push pick%';
+update picks set result = 'win' where result = 'push';
+
+delete from weekend_previews where intro = 'test';
