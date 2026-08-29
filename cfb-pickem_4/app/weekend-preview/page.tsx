@@ -28,18 +28,31 @@ export default async function WeekendPreview() {
   }
   if (!active) return <p className="sub">No active season.</p>;
 
-  const [{ data: preview }, { data: lock }] = await Promise.all([
-    db()
-      .from("weekend_previews")
-      .select("*")
-      .eq("period_id", active.period.id)
-      .maybeSingle(),
-    db()
-      .from("weekend_preview_locks")
-      .select("*")
-      .eq("period_id", active.period.id)
-      .maybeSingle(),
-  ]);
+  const [{ data: preview, error: previewError }, { data: lock, error: lockError }] =
+    await Promise.all([
+      db()
+        .from("weekend_previews")
+        .select("*")
+        .eq("period_id", active.period.id)
+        .maybeSingle(),
+      db()
+        .from("weekend_preview_locks")
+        .select("*")
+        .eq("period_id", active.period.id)
+        .maybeSingle(),
+    ]);
+
+  // A real database error (wrong key, RLS denial, a typo'd table name)
+  // used to look IDENTICAL to "nothing generated yet" -- both just left
+  // `preview` null, since neither query's `error` was ever checked. That
+  // silence is exactly what turned one bug into a long back-and-forth;
+  // surface it instead of guessing again next time.
+  if (previewError) {
+    return <p className="sub">Database error loading the preview: {previewError.message}</p>;
+  }
+  if (lockError) {
+    console.error("[weekend-preview] weekend_preview_locks query failed:", lockError.message);
+  }
 
   if (!preview) {
     return (
