@@ -59,19 +59,25 @@ export default async function Results() {
         </div>
       )}
 
-      {/* The spreadsheet grid, week down the side, players across the top. */}
+      {/* The spreadsheet grid, week down the side, players across the top.
+          className="cols" scopes the centered/divided/shaded styling in
+          globals.css to just this table. Each row is tagged "merged" (one
+          colSpan={2} cell per player -- the name row, the Money row) or
+          "pairs" (a separate W and L cell per player -- everything else),
+          since the two shapes need different nth-child math to land the
+          divider in the same place under every row. */}
       <div className="card" style={{ overflowX: "auto" }}>
-        <table>
+        <table className="cols">
           <thead>
-            <tr>
+            <tr className="merged">
               <th></th>
               {names.map((n) => (
-                <th key={n} colSpan={2} style={{ textAlign: "center" }}>
+                <th key={n} colSpan={2}>
                   {n}
                 </th>
               ))}
             </tr>
-            <tr>
+            <tr className="pairs">
               <th></th>
               {names.map((n) => [
                 <th key={n + "w"}>W</th>,
@@ -81,7 +87,7 @@ export default async function Results() {
           </thead>
           <tbody>
             {periods.map(([seq, label]) => (
-              <tr key={seq}>
+              <tr className="pairs" key={seq}>
                 <td>{label}</td>
                 {names.map((n) => {
                   const c = cell(seq, n);
@@ -95,7 +101,7 @@ export default async function Results() {
             ))}
           </tbody>
           <tfoot>
-            <tr>
+            <tr className="pairs">
               <td>Total</td>
               {names.map((n) => [
                 <td key={n + "w"}>{totals[n].w}</td>,
@@ -103,7 +109,7 @@ export default async function Results() {
               ])}
             </tr>
             {payouts.length > 0 && (
-              <tr>
+              <tr className="merged">
                 <td>Money</td>
                 {names.map((n) => {
                   const net = netByName[n];
@@ -112,7 +118,6 @@ export default async function Results() {
                       key={n}
                       colSpan={2}
                       className={net === undefined ? undefined : net >= 0 ? "pos" : "neg"}
-                      style={{ textAlign: "center" }}
                     >
                       {net === undefined ? "" : money(net)}
                     </td>

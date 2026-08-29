@@ -148,6 +148,31 @@ tfoot td { font-weight: 650; color: var(--ink); border-top: 1px solid var(--line
 .pos { color: var(--pos); font-weight: 620; }
 .neg { color: var(--neg); font-weight: 620; }
 
+/* ---- the Results weekly grid: centered data, one column-group per
+   player ---- */
+/* Scoped to .cols so History's and Scoreboard's tables (right-aligned
+   numbers reads better there) are untouched. */
+.cols th:not(:first-child), .cols td:not(:first-child) { text-align: center; }
+
+/* A divider before every player's block, so it's obvious at a glance
+   where one player's columns end and the next begin. Two row shapes to
+   cover: "pairs" rows have a separate W and L cell per player (divide
+   before the first of each pair); "merged" rows have one colSpan={2}
+   cell per player already (divide before every one). */
+.cols tr.pairs th:nth-child(2n), .cols tr.pairs td:nth-child(2n),
+.cols tr.merged th:not(:first-child), .cols tr.merged td:not(:first-child) {
+  border-left: 1px solid var(--line);
+}
+
+/* A faint tint on every other player's whole block (both its columns,
+   pairs or merged), so scanning down a column doesn't require re-finding
+   which player it belongs to on every row. */
+.cols tr.pairs th:nth-child(4n+2), .cols tr.pairs th:nth-child(4n+3),
+.cols tr.pairs td:nth-child(4n+2), .cols tr.pairs td:nth-child(4n+3),
+.cols tr.merged th:nth-child(2n), .cols tr.merged td:nth-child(2n) {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
 /* Row/column headings stay on one line even on a phone — shrink instead of
    wrapping, and let the .card wrapper's overflow-x scroll handle the rest. */
 @media (max-width: 480px) {
