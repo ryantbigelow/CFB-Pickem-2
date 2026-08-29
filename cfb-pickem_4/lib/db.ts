@@ -27,7 +27,24 @@ export function db(): SupabaseClient {
     );
   }
 
-  client = createClient(url, key, { auth: { persistSession: false } });
+  client = createClient(url, key, {
+    auth: { persistSession: false },
+    // When no custom fetch is given, supabase-js falls back to the bare
+    // global `fetch` and never sets a `cache` option on its requests
+    // (checked directly in node_modules/@supabase/postgrest-js). In the
+    // Next.js App Router, that global fetch is Next's own instrumented
+    // version, which can cache a GET with no explicit cache option in its
+    // Data Cache -- independent of the actual database, and independent
+    // of a page's own `dynamic = "force-dynamic"`, since that instruments
+    // fetch() calls written in route files, not ones several layers deep
+    // inside a third-party client library. This is what silently froze
+    // the Weekend Preview page on the first-ever (pre-generation, empty)
+    // response to that exact query, forever, regardless of what the
+    // database actually held afterward. Forcing no-store here, once, at
+    // the client itself, is airtight against that for every query this
+    // app makes, not just the one that happened to surface it.
+    global: { fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }) },
+  });
   return client;
 }
 
