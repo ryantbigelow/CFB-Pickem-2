@@ -185,3 +185,42 @@ from weekend_preview_locks where lock_blurb like 'push pick%';
 update picks set result = 'win' where result = 'push';
 
 delete from weekend_previews where intro = 'test';
+
+\echo ''
+\echo '=== TEST 10: payouts.n counts the whole roster, even mid-season with picks still ungraded ==='
+-- Regression test for a real bug: player_records used to build from picks,
+-- not season_players, so a player with zero graded picks so far was
+-- MISSING from the view entirely (not zeroed -- absent), silently
+-- shrinking `n` (the opponent count payouts is built on) until every
+-- single player had at least one graded pick. Early in a season that's
+-- everyone but the one player who's graded something -- exactly the
+-- shape below: 6 players, only one graded pick, total.
+insert into players (name) values ('TenA'),('TenB'),('TenC'),('TenD'),('TenE'),('TenF');
+insert into seasons (label, stake_usd) values ('t10', 10);
+insert into season_players (season_id, player_id, base_order)
+select s.id, p.id, row_number() over (order by p.name)
+from seasons s, players p
+where s.label = 't10' and p.name in ('TenA','TenB','TenC','TenD','TenE','TenF');
+insert into periods (season_id, seq, label, status)
+select id, 1, 'Wk 0-1', 'open' from seasons where label = 't10';
+insert into games (period_id, external_id, home_team, away_team, kickoff)
+select pe.id, 'g1', 'Home', 'Away', now()
+from periods pe join seasons s on s.id = pe.season_id where s.label = 't10';
+insert into picks (period_id, player_id, game_id, market, side, line, result)
+select pe.id, p.id, g.id, 'spread', 'home', -3, 'loss'
+from periods pe join seasons s on s.id = pe.season_id
+join games g on g.period_id = pe.id
+join players p on p.name = 'TenA'
+where s.label = 't10';
+
+select case when count(*) = 6
+       then 'ALL 6 PLAYERS PRESENT, INCLUDING 5 WITH NOTHING GRADED YET'
+       else count(*)||' PLAYERS PRESENT (should be 6) -- player_records is dropping rows again'
+       end as roster_check
+from payouts where season = 't10';
+
+select case when count(*) filter (where net_usd not in (-50, 10)) = 0
+       then 'ALL 6 NET AMOUNTS CORRECT (-$50 the one loss, +$10 the other five)'
+       else 'WRONG NET AMOUNT SOMEWHERE -- n is probably wrong again'
+       end as amount_check
+from payouts where season = 't10';

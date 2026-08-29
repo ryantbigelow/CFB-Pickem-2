@@ -369,17 +369,23 @@ left join picks pk on pk.period_id = pe.id and pk.player_id = pl.id
 group by pe.season_id, pe.seq, pe.label, pl.name;
 
 
+-- Starts from season_players (the roster), not picks -- a player with
+-- zero graded picks so far must still show up as a real 0-0, not be
+-- missing entirely. Missing rows here undercounts `n` in payouts below
+-- (silently, until the pool is fully graded) -- the exact class of bug
+-- that broke the original spreadsheet, just arrived at a different way.
 create or replace view player_records as
-select pe.season_id, pk.player_id,
-       count(*) filter (where pk.result = 'win')  as wins,
-       count(*) filter (where pk.result = 'loss') as losses,
-       count(*) filter (where pk.result = 'push') as pushes,
-       count(*) filter (where pk.result = 'win')
-         - count(*) filter (where pk.result = 'loss') as net_units
-from picks pk
-join periods pe on pe.id = pk.period_id
-where pk.result is not null
-group by pe.season_id, pk.player_id;
+select sp.season_id, sp.player_id,
+       count(pk.id) filter (where pk.result = 'win')  as wins,
+       count(pk.id) filter (where pk.result = 'loss') as losses,
+       count(pk.id) filter (where pk.result = 'push') as pushes,
+       count(pk.id) filter (where pk.result = 'win')
+         - count(pk.id) filter (where pk.result = 'loss') as net_units
+from season_players sp
+join periods pe on pe.season_id = sp.season_id
+left join picks pk on pk.period_id = pe.id and pk.player_id = sp.player_id
+                   and pk.result is not null
+group by sp.season_id, sp.player_id;
 
 
 -- THE PAYOUT FORMULA — reverse-engineered from Betting Pool.xlsx and
