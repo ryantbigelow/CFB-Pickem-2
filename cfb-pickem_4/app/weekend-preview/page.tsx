@@ -65,6 +65,14 @@ export default async function WeekendPreview() {
             week&apos;s picks are in.
           </div>
         </div>
+        {/* TEMPORARY: tracking down a case where a confirmed row in
+            weekend_previews still doesn't show up here. Safe to show --
+            NEXT_PUBLIC_SUPABASE_URL is a public var (browsers already see
+            it), and a period id isn't sensitive. Remove once resolved. */}
+        <p className="hint" style={{ marginTop: 14 }}>
+          debug — supabase: {process.env.NEXT_PUBLIC_SUPABASE_URL ?? "(unset)"} · queried
+          period_id: {active.period.id} · rows found: 0
+        </p>
       </>
     );
   }
