@@ -55,6 +55,14 @@ export default async function WeekendPreview() {
   }
 
   if (!preview) {
+    // TEMPORARY, only reached on the empty-state path: an unfiltered read
+    // of the whole table, so we can tell "the table looks empty to the
+    // app at all" apart from "this one filter finds nothing" -- the
+    // filtered query alone couldn't tell those two apart.
+    const { data: allRows, error: allRowsError } = await db()
+      .from("weekend_previews")
+      .select("period_id,generated_at");
+
     return (
       <>
         <h1>Weekend Preview</h1>
@@ -71,7 +79,12 @@ export default async function WeekendPreview() {
             it), and a period id isn't sensitive. Remove once resolved. */}
         <p className="hint" style={{ marginTop: 14 }}>
           debug — supabase: {process.env.NEXT_PUBLIC_SUPABASE_URL ?? "(unset)"} · queried
-          period_id: {active.period.id} · rows found: 0
+          period_id: {active.period.id}
+        </p>
+        <p className="hint">
+          unfiltered read of weekend_previews — error:{" "}
+          {allRowsError ? JSON.stringify(allRowsError) : "none"} · rows:{" "}
+          {JSON.stringify(allRows)}
         </p>
       </>
     );
