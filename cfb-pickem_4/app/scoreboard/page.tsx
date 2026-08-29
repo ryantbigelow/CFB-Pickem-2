@@ -1,6 +1,7 @@
 import { db, activePeriod, LivePick } from "@/lib/db";
 import { syncScores } from "@/lib/sync";
 import { readCredits, creditsSummary } from "@/lib/lines";
+import LocalTime from "@/app/local-time";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -101,14 +102,7 @@ function Card({ p }: { p: LivePick }) {
         <span>
           {p.status === "final"
             ? "Final"
-            : p.period_clock ??
-              new Date(p.kickoff).toLocaleString(undefined, {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+            : p.period_clock ?? <LocalTime iso={p.kickoff} />}
         </span>
       </div>
 

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Slot } from "@/lib/db";
+import LocalTime from "@/app/local-time";
 
 export type GameGroup = {
   game_id: string;
@@ -112,13 +113,7 @@ export default function Picker({
                     ? g.status === "final"
                       ? "final"
                       : "started"
-                    : new Date(g.kickoff).toLocaleString(undefined, {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
+                    : <LocalTime iso={g.kickoff} />}
                 </span>
               </div>
               <div className="slots">
