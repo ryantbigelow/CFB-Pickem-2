@@ -125,6 +125,15 @@ function toClock(status: any): string | null {
 
 export function normalizeTeam(name: string): string {
   return name
+    // NFD splits an accented letter into the plain letter + a separate
+    // combining-mark codepoint (U+0300-U+036F) -- strip just the mark, so
+    // "José" normalizes to "jose", not "jos". Without this, the very next
+    // line (which strips anything outside [a-z0-9 ]) deleted the accented
+    // character whole, silently eating a letter out of the school's name
+    // and breaking every match against it -- exactly what happened to
+    // San José State.
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9 ]/g, "")
     .replace(/\b(university|state university|the)\b/g, "")

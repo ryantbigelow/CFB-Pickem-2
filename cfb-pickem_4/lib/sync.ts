@@ -74,7 +74,22 @@ export async function syncScores(
           { homeTeam: e.homeTeam, awayTeam: e.awayTeam, kickoff: e.kickoff }
         )
       );
-      if (!hit) continue;
+      if (!hit) {
+        // Team-name matching is the known fragile point (see the comment
+        // atop lib/scores.ts) -- a game that's already kicked off but
+        // still isn't matching is worth knowing about immediately, not
+        // guessing at blind after someone notices the Scoreboard looks
+        // wrong. A game that just hasn't started yet is normal and not
+        // logged; ESPN may simply not have posted it yet.
+        if (new Date(g.kickoff).getTime() < now) {
+          console.warn(
+            `[sync] no ESPN match for "${g.away_team} @ ${g.home_team}" ` +
+              `(kickoff ${g.kickoff}) -- check normalizeTeam() in lib/scores.ts ` +
+              `against ESPN's actual name for these teams`
+          );
+        }
+        continue;
+      }
       matched++;
 
       await s
