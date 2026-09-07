@@ -86,6 +86,25 @@ If Saturday morning arrives and `ANTHROPIC_API_KEY` isn't set yet, the cron
 just fails quietly and the page says "check back soon" instead of
 crashing — add the key and it picks up the very next Saturday.
 
+### About the weekly week-to-week advance
+
+Which period (week) is open for picks used to be entirely manual — a hand-
+written SQL update in Supabase every Sunday. Now a third cron, every Sunday
+at noon Central, closes whatever period is open and opens the next one by
+sequence, all season, on its own. Noon is exact for the regular season
+(Central Daylight Time); once daylight saving ends in November it drifts to
+11am Central for the bowls — a `vercel.json` schedule can't shift itself
+with the clock, and an hour early on a handful of bowl weekends isn't worth
+a second cron over.
+
+That auto-advance is a blunt "move forward exactly one," which is right
+most Sundays but not around the bowls (they don't line up one-per-week the
+way the regular season does) or if a week needs to be skipped or redone. For
+those, there's a **Change week** button next to the week name at the top of
+the Picks page — pick any period from the list and enter the passphrase.
+Whatever the button sets stands as the new starting point for the following
+Sunday's auto-advance; nothing needs to be reconciled between the two.
+
 Then open the site and start entering picks.
 
 ---

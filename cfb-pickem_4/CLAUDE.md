@@ -22,10 +22,11 @@ So: no bot, no shot clock, no nagging, no automated trash talk. When you're
 tempted to add automation that "improves engagement," don't. Anything that moves
 banter out of the group text and into software is a regression, even if it works.
 
-**The one deliberate exception is the Weekend Preview** (see below) — Ryan
-asked for that automation explicitly, by name, with real specifics about
-tone and content. It's a carve-out, not a precedent: it doesn't license
-adding more automated content elsewhere on your own initiative.
+**The deliberate exceptions are the Weekend Preview and the weekly period
+advance** (both documented below) — Ryan asked for each explicitly, by
+name, with real specifics about how they should behave. They're carve-outs,
+not a precedent: neither licenses adding more automation elsewhere on your
+own initiative.
 
 ---
 
@@ -41,7 +42,7 @@ adding more automated content elsewhere on your own initiative.
    leaderboard, charts, a "record book" of superlatives, and the AI Lock of the
    Week's track record.
 5. **Weekend Preview** (`/weekend-preview`) — Saturdays only. See its own
-   section below; it's the one deliberate exception to "no bot."
+   section below; it's one of the two deliberate exceptions to "no bot."
 
 (Picks/Scoreboard/Results used to be called Picker / Live / Scoreboard, in that
 order — renamed August 2026. If you see those old names elsewhere in this
@@ -206,6 +207,36 @@ without a client component.
 holding the date (not a plain boolean) so it self-resets every new Saturday
 with no cleanup job needed. No accounts exist in this app, so a cookie (per
 browser) is the same "who's asking" proxy the rest of the app already uses.
+
+## The weekly period advance — one more deliberate automation
+
+`periods.status` used to be *purely* manual (a hand-written SQL update in
+Supabase). It still can be, but a third cron (`vercel.json` → Sunday noon
+Central → `/api/advance-period` → `lib/periods.ts`) now does it every week
+on its own: whatever period is `open` gets `locked`, and the next one by
+`seq` gets `open`. This is a second deliberate exception alongside the
+Weekend Preview — same caveat applies: it's a carve-out Ryan asked for by
+name, not license to automate anything else on your own initiative.
+
+**It's unconditional, on purpose.** No "did this already run this week"
+check — it's a pure function of whatever periods.status currently says.
+That's what makes the manual override safe: the **Change week** button on
+the Picks page (`app/period-selector.tsx` → `/api/set-period` →
+`setOpenPeriodById()`) can jump to any period, any time, and next Sunday's
+cron just continues forward from wherever that landed. Nothing needs
+reconciling between the two paths — they're both thin callers of the same
+`setOpenPeriod()` in `lib/periods.ts`.
+
+**Locked, not final.** The outgoing period gets `'locked'`, never
+`'final'` — some of its games may not be graded yet when Sunday noon rolls
+around (an MNF-style late game, mainly). `'locked'` means "no new picks";
+grading is `gradeFinished()` in `lib/sync.ts`, entirely independent of this.
+
+**Noon Central drifts an hour after daylight saving ends** (`vercel.json`'s
+schedule is a fixed UTC time; Central isn't) — exact through the regular
+season, an hour early for the bowls. Same tradeoff already made for the
+Weekend Preview cron; not worth a second cron to chase an hour on a
+handful of postseason weekends.
 
 ## Open questions — ask Ryan, don't guess
 

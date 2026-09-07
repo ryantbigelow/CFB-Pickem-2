@@ -1,6 +1,7 @@
 import { db, activePeriod, players, Slot } from "@/lib/db";
 import { refreshLinesIfStale, ago, creditsSummary } from "@/lib/lines";
 import Picker, { GameGroup } from "./picker";
+import PeriodSelector from "./period-selector";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,16 @@ export default async function Page() {
 
   return (
     <>
-      <h1>{period.label}</h1>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <h1>{period.label}</h1>
+        <PeriodSelector
+          periods={active.periods.map((p: any) => ({
+            id: p.id,
+            label: p.label,
+            status: p.status,
+          }))}
+        />
+      </div>
       <p className="sub">
         {taken} of {target} picks in · lines {ago(lines.updatedAt)}
         {creditsSummary(lines.creditsLeft) &&
