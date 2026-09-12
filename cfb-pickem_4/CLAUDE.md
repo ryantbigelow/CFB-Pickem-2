@@ -256,6 +256,27 @@ season, an hour early for the bowls. Same tradeoff already made for the
 Weekend Preview cron; not worth a second cron to chase an hour on a
 handful of postseason weekends.
 
+## "No active season" can lie — it used to mean two different things
+
+`activePeriod()` (`lib/db.ts`) looks up the one `seasons` row with
+`is_active = true`, then that season's `periods`. It used to treat ANY
+failure on either query — a real "zero rows, no active season" AND a
+transient network/connection hiccup — identically, returning `null` either
+way. Every page shows the same "No active season / run db/seed.sql"
+message for that `null`, which is flatly wrong advice when the real cause
+was a one-off blip that a page refresh outran. This produced exactly that
+symptom once: the season and its periods were both fine in the database,
+but a single page load still showed "No active season," and reloading
+fixed it.
+
+Fixed by checking the query's actual error code: Postgrest's `PGRST116` is
+the real "zero rows matched" case (genuinely no active season). Any other
+error now throws with the real message instead, which every caller already
+had a `try/catch` for (`app/page.tsx` and friends show `e.message`;
+`app/layout.tsx`'s nav fails soft to "database not connected"). If this
+happens again, the page will now say what actually went wrong instead of
+pointing at `db/seed.sql`.
+
 ## Open questions — ask Ryan, don't guess
 
 - Nothing blocking.

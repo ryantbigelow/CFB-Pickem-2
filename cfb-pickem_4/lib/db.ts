@@ -91,12 +91,24 @@ export type Payout = { name: string; wins: number; losses: number; net_usd: numb
 /** The period we're currently drafting, else the next one up. */
 export async function activePeriod() {
   const s = db();
-  const { data: season } = await s
+  const { data: season, error: seasonError } = await s
     .from("seasons").select("id,label").eq("is_active", true).single();
+  // PGRST116 is Postgrest's real "zero rows matched" code -- that's the one
+  // case that actually means "no active season, go run db/seed.sql." Any
+  // other error (a dropped connection, a timeout, wrong credentials) was
+  // being silently treated the exact same way, which is what sent someone
+  // down the "did my season get deleted?!" path for what was really just a
+  // one-off blip that a page refresh outran. Surface those for real instead.
+  if (seasonError && seasonError.code !== "PGRST116") {
+    throw new Error(`Couldn't look up the active season: ${seasonError.message}`);
+  }
   if (!season) return null;
 
-  const { data: periods } = await s
+  const { data: periods, error: periodsError } = await s
     .from("periods").select("*").eq("season_id", season.id).order("seq");
+  if (periodsError) {
+    throw new Error(`Couldn't look up this season's periods: ${periodsError.message}`);
+  }
   if (!periods?.length) return null;
 
   const open = periods.find((p) => p.status === "open");
