@@ -21,6 +21,23 @@ import { mostRecentSeasonFor } from "./legacy-history";
 
 const MODEL = "claude-sonnet-5";
 
+// A menu of framing devices for the week's column. Picked deterministically
+// per period (see the hash below), never left to the model to choose --
+// that's what actually forces different weeks to read differently, instead
+// of relying on the model to remember to vary itself.
+const STYLE_MENU = [
+  "a sports-radio call-in host who's taken this way too personally",
+  "a courtroom verdict from a judge who has seen every excuse before",
+  "a nature-documentary narrator watching a fragile ecosystem",
+  "a noir detective's case file on a string of bad decisions",
+  "a halftime locker-room speech, delivered with total sincerity",
+  "a stock-market analyst covering a very volatile portfolio",
+  "a wrestling commentator hyping an undercard nobody asked for",
+  "a weather forecaster tracking a slow-moving disaster",
+  "an awards-show host reading nominees who all think they've already won",
+  "a movie-trailer voiceover for a sequel nobody wanted",
+];
+
 type GeneratedContent = {
   intro: string;
   players: { name: string; blurb: string }[];
@@ -155,8 +172,95 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
     teamRecord.set(team, t);
   }
 
+  // Each player's current streak (win or loss, pushes ignored -- a push is
+  // neither, same convention as the money math), chronological by period
+  // seq this season. Fresh ammo the model hasn't had before: "hot" and
+  // "cold" are a different angle than a flat season record.
+  const { data: gradedPicks } = await s
+    .from("picks")
+    .select("player_id,period_id,result")
+    .in(
+      "period_id",
+      periods.map((p: any) => p.id)
+    )
+    .not("result", "is", null)
+    .neq("result", "push");
+  const seqByPeriodId = new Map(periods.map((p: any) => [p.id, p.seq]));
+  const gradedByPlayer = new Map<string, { seq: number; result: string }[]>();
+  for (const pk of gradedPicks ?? []) {
+    const name = byPlayerId.get(pk.player_id);
+    const seq = seqByPeriodId.get(pk.period_id);
+    if (!name || seq == null) continue;
+    const arr = gradedByPlayer.get(name) ?? [];
+    arr.push({ seq, result: pk.result });
+    gradedByPlayer.set(name, arr);
+  }
+  const streaks: Record<string, { type: "win" | "loss"; count: number }> = {};
+  for (const [name, arr] of gradedByPlayer) {
+    arr.sort((a, b) => a.seq - b.seq);
+    let type: "win" | "loss" | null = null;
+    let count = 0;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const r: "win" | "loss" = arr[i].result === "win" ? "win" : "loss";
+      if (type === null) {
+        type = r;
+        count = 1;
+      } else if (r === type) {
+        count++;
+      } else break;
+    }
+    if (type) streaks[name] = { type, count };
+  }
+
+  // This week's overall "lean" across the whole pool -- chalk-heavy or
+  // dog-heavy, overs or unders. Another fresh angle: a vibe about the
+  // *week*, not just any one player.
+  let favorites = 0, dogs = 0, overs = 0, unders = 0;
+  for (const { pick } of refs) {
+    if (pick.market === "spread") {
+      if (pick.line < 0) favorites++;
+      else if (pick.line > 0) dogs++;
+    } else if (pick.side === "over") overs++;
+    else if (pick.side === "under") unders++;
+  }
+  const weeklyLean = { favorites, dogs, overs, unders };
+
+  // The last couple of weeks' previews, verbatim, so the model has
+  // something concrete to NOT repeat -- see SYSTEM_PROMPT's anti-rerun
+  // rule. Excludes the current period so a re-run (?force=1) never sees
+  // itself as "last week."
+  const { data: recentRows } = await s
+    .from("weekend_previews")
+    .select("period_id,intro,players,lock_blurb,generated_at")
+    .neq("period_id", period.id)
+    .order("generated_at", { ascending: false })
+    .limit(2);
+  let recentPreviews: { period: string; intro: string; players: any; lockBlurb: string | null }[] = [];
+  if (recentRows?.length) {
+    const { data: labelRows } = await s
+      .from("periods")
+      .select("id,label")
+      .in("id", recentRows.map((r: any) => r.period_id));
+    const labelById = new Map((labelRows ?? []).map((p: any) => [p.id, p.label]));
+    recentPreviews = recentRows.map((r: any) => ({
+      period: labelById.get(r.period_id) ?? "a past week",
+      intro: r.intro,
+      players: r.players,
+      lockBlurb: r.lock_blurb,
+    }));
+  }
+
+  // A structural frame for the week, picked deterministically from the
+  // period itself (not left to the model) so consecutive weeks are
+  // actually shaped differently, not just differently worded. Stable
+  // across a ?force=1 re-run of the same week on purpose.
+  let hash = 0;
+  for (const ch of period.id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const styleForThisWeek = STYLE_MENU[hash % STYLE_MENU.length];
+
   const dataForModel = {
     period: { label: period.label, season: season.label },
+    styleForThisWeek,
     currentPicks: refs.map(({ ref, pick }) => ({
       ref,
       player: pick.player,
@@ -167,6 +271,9 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
     priorPeriod,
     tendencies: Object.fromEntries(tendencies),
     teamHistoryThisSeason: Object.fromEntries(teamRecord),
+    streaks,
+    weeklyLean,
+    recentPreviews,
   };
 
   const content = await callClaude(dataForModel);
@@ -263,6 +370,35 @@ not a uniform roast:
 - Vary the target and the angle blurb to blurb. Reaching for the same
   joke shape (record, then tendency, then jab) six times in a row reads
   like a template, not a column.
+
+DON'T REPEAT LAST WEEK: the DATA JSON's "recentPreviews" field has the
+actual text of your last one or two columns. Read it before you write a
+word. Then:
+- Never reuse a joke, a phrase, a metaphor, or a sentence shape from it,
+  even about a different player. If "recentPreviews" called someone's
+  pick "brave" or opened with "welcome back," this week finds a different
+  way in.
+- Don't default to the same paragraph order every week (intro sets the
+  scene, then records, then tendency, then jab) just because that's what
+  ran last time — mix up where in a blurb the joke lands.
+- If a player's situation genuinely is the same as last week (still on a
+  cold streak, still fading favorites), that's fine to mention — just say
+  it in a new way, don't recycle the old line about it.
+
+THIS WEEK'S FRAME: "styleForThisWeek" in the DATA JSON names a persona or
+framing device (e.g. a courtroom verdict, a nature documentary). Write the
+WHOLE column — intro, every player blurb, the lock — loosely filtered
+through that lens: its vocabulary, its rhythm, its little verbal tics.
+Don't announce the bit ("as your sports-radio host, I...") or force every
+sentence into character if it stops being funny — just let it flavor the
+column so this week reads structurally different from last week's, not
+merely reworded.
+
+FRESH ANGLES: "streaks" (each player's current run of wins or losses) and
+"weeklyLean" (how chalk- or dog-heavy, over- or under-heavy the whole pool
+went this week) are new data you haven't had before — real material, not
+just filler. Use them where they're actually funny; skip them where
+they're not.
 
 HARD RULES:
 - Any SPECIFIC number you cite (records, tendencies, team history) MUST

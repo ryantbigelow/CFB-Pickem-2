@@ -196,6 +196,24 @@ never from the model's outside "knowledge" of actual college football (which
 we can't). The "Lock of the Week" is comedy with real numbers behind it, not
 a real prediction.
 
+**Repetition is fought at the data/code layer, not left to the model's
+self-restraint.** Early columns started reading like reruns of each other —
+same joke shapes, same opening line, week after week. `lib/preview.ts` now:
+- hands the model its own last one or two columns (`recentPreviews`) with a
+  hard "don't reuse a joke/phrase/sentence shape from these" instruction;
+- picks a structural frame for the week itself (`STYLE_MENU`, a persona
+  like "courtroom verdict" or "nature documentary," chosen deterministically
+  by hashing the period id — the model never picks its own frame, which is
+  what actually forces variety instead of just requesting it);
+- feeds it two data angles it didn't have before: each player's current
+  win/loss `streaks`, and the week's overall `weeklyLean` (chalk vs. dogs,
+  overs vs. unders across the whole pool).
+
+If it starts feeling stale again, the next lever is more data (head-to-head
+rivalries, biggest blowout cover/bust, money-leaderboard movement), not a
+longer "please be funnier" instruction — the model needs new material, not
+more encouragement.
+
 **"Is it Saturday" is timezone-explicit** (`lib/time.ts`, `APP_TIMEZONE =
 "America/Chicago"`) — computed the same way regardless of what timezone the
 server process happens to run in, the same ambiguity that caused the
