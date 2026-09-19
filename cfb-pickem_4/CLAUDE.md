@@ -144,8 +144,17 @@ fallback and its key is still in `.env.example`.
 
 **Team-name matching is the known fragile point.** Games come from The Odds API,
 scores from ESPN, and the two don't name teams identically. `sameGame()` matches
-on normalized name AND kickoff day, never name alone. Persist the resolved
-`espnId` on first match so later refreshes are an exact lookup.
+on normalized name AND kickoff day, never name alone.
+
+**`games.espn_id` is now actually persisted** (`lib/sync.ts`, on every
+match) — the comment above said to do this for a while before the column
+existed; `db/migrate-005.sql` added it. It does double duty: a stable id
+for re-matching, and it's what lets each Scoreboard card link out to
+ESPN's real game page (`https://www.espn.com/college-football/game/_/gameId/<espn_id>`,
+`app/scoreboard/page.tsx`). A game that hasn't matched ESPN yet has a null
+`espn_id`, so its card stays a plain, unlinked box rather than a dead link
+— check `normalizeTeam()` in `lib/scores.ts` first if a card that should
+clearly be matched still isn't clickable.
 
 ## Scores sync on page load, NOT on a cron
 

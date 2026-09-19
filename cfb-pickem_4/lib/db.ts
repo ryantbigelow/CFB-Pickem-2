@@ -83,6 +83,7 @@ export type LivePick = {
   line: number;
   result: string | null;
   margin: number | null;
+  espn_id: string | null;
 };
 
 export type GridRow = { seq: number; period: string; name: string; w: number; l: number };

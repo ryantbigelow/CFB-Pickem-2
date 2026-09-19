@@ -29,6 +29,8 @@ Your Supabase project already exists. Four steps to a live site:
 **If you already ran `schema.sql` before Aug 17**, also run `db/migrate-001.sql`
 — one line, safe to run twice. **If you're adding the Weekend Preview feature
 to an already-deployed site**, also run `db/migrate-003.sql` the same way.
+**If you're adding the Scoreboard's ESPN game links to an already-deployed
+site**, also run `db/migrate-005.sql` the same way.
 
 ### Adding the environment variables in Vercel
 

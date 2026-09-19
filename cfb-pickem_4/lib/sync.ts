@@ -100,6 +100,7 @@ export async function syncScores(
           status: hit.status,
           period_clock: hit.clock,
           scores_updated: stamp,
+          espn_id: hit.espnId,
         })
         .eq("id", g.id);
     }

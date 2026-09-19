@@ -95,8 +95,8 @@ function Card({ p }: { p: LivePick }) {
       ? state === "cover" ? "graded-win" : state === "lose" ? "graded-loss" : ""
       : "";
 
-  return (
-    <div className={`lg ${graded}`}>
+  const body = (
+    <>
       <div className="top">
         <span>{p.player}</span>
         <span>
@@ -119,6 +119,23 @@ function Card({ p }: { p: LivePick }) {
         <span>{p.bet}</span>
         {started && state && <span className={`pill ${state}`}>{word}</span>}
       </div>
-    </div>
+    </>
   );
+
+  // Only linkable once ESPN's game id has been matched (lib/sync.ts sets it
+  // on the first successful score sync) -- a game that hasn't matched yet
+  // stays a plain card instead of a dead link.
+  if (p.espn_id) {
+    return (
+      <a
+        className={`lg ${graded}`}
+        href={`https://www.espn.com/college-football/game/_/gameId/${p.espn_id}`}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {body}
+      </a>
+    );
+  }
+  return <div className={`lg ${graded}`}>{body}</div>;
 }

@@ -183,6 +183,11 @@ tfoot td { font-weight: 650; color: var(--ink); border-top: 1px solid var(--line
 /* ---- scoreboard (live picks) ---- */
 .live { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .lg { background: var(--surface); border: 1px solid var(--border); border-radius: 11px; padding: 14px 16px; }
+/* Cards are <a> once ESPN's game id is known (see app/scoreboard/page.tsx),
+   plain <div> otherwise -- reset link styling so the two look identical
+   apart from a hover cue that this one actually goes somewhere. */
+a.lg { display: block; text-decoration: none; color: inherit; transition: border-color 0.15s; }
+a.lg:hover { border-color: var(--ink-2); }
 .lg .top { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 9px; }
 .lg .score { font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; margin-bottom: 3px; }
 .lg .bet { font-size: 13px; color: var(--ink-2); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); }

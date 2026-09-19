@@ -224,3 +224,17 @@ select case when count(*) filter (where net_usd not in (-50, 10)) = 0
        else 'WRONG NET AMOUNT SOMEWHERE -- n is probably wrong again'
        end as amount_check
 from payouts where season = 't10';
+
+\echo ''
+\echo '=== TEST 11: live_picks exposes espn_id, for the Scoreboard card link ==='
+-- Regression test: the Scoreboard card only links to ESPN when live_picks
+-- carries espn_id through from games. A game that hasn't matched yet (still
+-- NULL) must come through as NULL, not an empty string or an error.
+update games set espn_id = '401520281'
+where external_id = 'e1' and period_id in (select id from periods where seq = 1);
+
+select bet, espn_id from live_picks
+where home_team = 'Alabama' and away_team = 'Auburn' and espn_id is not null;
+
+select case when espn_id is null then 'UNMATCHED GAME STILL NULL (correct)' end as unmatched_check
+from live_picks where home_team = 'Georgia' and away_team = 'Clemson' limit 1;

@@ -94,6 +94,8 @@ create table games (
   scores_updated timestamptz,       -- last ESPN sync; throttles the dashboard
   status         text not null default 'scheduled'
                  check (status in ('scheduled','in_progress','final','cancelled')),
+  espn_id        text,              -- ESPN's event id, once matched -- links
+                                     -- the Scoreboard card to the real game
 
   unique (period_id, external_id)
 );
@@ -338,7 +340,7 @@ left join players pl on pl.id = pk.player_id;
 create or replace view live_picks as
 select pk.id as pick_id, g.period_id, pl.name as player,
        g.away_team, g.home_team, g.away_score, g.home_score,
-       g.status, g.period_clock, g.kickoff,
+       g.status, g.period_clock, g.kickoff, g.espn_id,
        pk.market, pk.side, pk.line, pk.result,
        describe_pick(pk.game_id, pk.market, pk.side, pk.line, pk.price) as bet,
        case
