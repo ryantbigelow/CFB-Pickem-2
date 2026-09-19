@@ -214,6 +214,21 @@ rivalries, biggest blowout cover/bust, money-leaderboard movement), not a
 longer "please be funnier" instruction — the model needs new material, not
 more encouragement.
 
+**`max_tokens` has to cover thinking too, and it grew.** Sonnet 5 thinks by
+default (adaptive), spending part of the response's token budget on
+invisible reasoning before it writes anything — that's not optional unless
+you explicitly disable it. The anti-repetition data above (last week's full
+column, streaks, weekly lean) made both the prompt and the model's
+reasoning about it bigger, and `max_tokens: 2500` — already thin — got a
+real response truncated mid-JSON (`stop_reason: "max_tokens"`) the very
+next week. Now `6000` with `output_config: { effort: "medium" }` to keep
+thinking bounded on what's a styled-writing task, not a reasoning-heavy
+one. If truncation ever recurs, that error message names the exact
+`stop_reason` — check that before assuming it's a repeat of the old
+"parsed the wrong content block" bug (a different failure with the same
+"invalid JSON" symptom, fixed separately — see the git history on this
+file).
+
 **"Is it Saturday" is timezone-explicit** (`lib/time.ts`, `APP_TIMEZONE =
 "America/Chicago"`) — computed the same way regardless of what timezone the
 server process happens to run in, the same ambiguity that caused the

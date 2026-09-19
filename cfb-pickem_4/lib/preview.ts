@@ -312,7 +312,17 @@ async function callClaude(data: unknown): Promise<GeneratedContent> {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 2500,
+      // Sonnet 5 thinks by default -- that reasoning draws from the same
+      // max_tokens budget as the actual column, and this prompt got
+      // noticeably bigger (last week's full column, streaks, weekly lean)
+      // without this ever being raised. 2500 was already thin; the two
+      // together truncated a real response mid-JSON (stop_reason=
+      // max_tokens) rather than finishing it. Room to breathe, plus
+      // effort:"medium" so thinking stays bounded on what's fundamentally
+      // a styled writing task, not one that benefits from deep reasoning
+      // -- keeps this comfortably inside the route's 60s maxDuration too.
+      max_tokens: 6000,
+      output_config: { effort: "medium" },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: JSON.stringify(data) }],
     }),
