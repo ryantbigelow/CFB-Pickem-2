@@ -13,7 +13,7 @@
  */
 
 import { db } from "./db";
-import { fetchScores, sameGame, grade } from "./scores";
+import { fetchScores, findEspnMatch, grade } from "./scores";
 
 export const STALE_AFTER_MS = 25_000;
 
@@ -38,7 +38,7 @@ export async function syncScores(
 
   const { data: games } = await s
     .from("games")
-    .select("id,home_team,away_team,kickoff,status,scores_updated")
+    .select("id,home_team,away_team,kickoff,status,scores_updated,espn_id")
     .eq("period_id", periodId);
 
   if (!games?.length) return none;
@@ -68,27 +68,54 @@ export async function syncScores(
     const stamp = new Date().toISOString();
 
     for (const g of games) {
-      const hit = espn.find((e) =>
-        sameGame(
-          { homeTeam: g.home_team, awayTeam: g.away_team, kickoff: g.kickoff },
-          { homeTeam: e.homeTeam, awayTeam: e.awayTeam, kickoff: e.kickoff }
-        )
-      );
+      // Once a game has matched before, its espn_id is an exact lookup --
+      // skip re-guessing entirely. This isn't just faster, it's safer: a
+      // game that's already correctly pinned can never get reassigned to
+      // a different event by some later ambiguous name-matching pass.
+      let hit = g.espn_id ? espn.find((e) => e.espnId === g.espn_id) : undefined;
+
       if (!hit) {
-        // Team-name matching is the known fragile point (see the comment
-        // atop lib/scores.ts) -- a game that's already kicked off but
-        // still isn't matching is worth knowing about immediately, not
-        // guessing at blind after someone notices the Scoreboard looks
-        // wrong. A game that just hasn't started yet is normal and not
-        // logged; ESPN may simply not have posted it yet.
-        if (new Date(g.kickoff).getTime() < now) {
+        const result = findEspnMatch(
+          { homeTeam: g.home_team, awayTeam: g.away_team, kickoff: g.kickoff },
+          espn
+        );
+
+        if (result.kind === "ambiguous") {
+          // Real example: our "Virginia" game matched BOTH ESPN's "West
+          // Virginia" and "Virginia Tech" events under the old
+          // substring-only rule -- "Virginia" is a genuine substring of
+          // both, and they're different teams. Guessing here doesn't just
+          // risk a missed sync, it risks grading a pick against the wrong
+          // game's score entirely, so this refuses to pick one. Set
+          // games.espn_id by hand (Supabase table editor) using the
+          // correct id from ESPN's scoreboard to resolve it.
           console.warn(
-            `[sync] no ESPN match for "${g.away_team} @ ${g.home_team}" ` +
-              `(kickoff ${g.kickoff}) -- check normalizeTeam() in lib/scores.ts ` +
-              `against ESPN's actual name for these teams`
+            `[sync] AMBIGUOUS ESPN match for "${g.away_team} @ ${g.home_team}" ` +
+              `(kickoff ${g.kickoff}) -- candidates: ` +
+              result.candidates.map((c) => `${c.awayTeam} @ ${c.homeTeam} (espnId=${c.espnId})`).join(", ") +
+              ` -- set games.espn_id by hand to the correct one, this game will not auto-grade until then`
           );
+          continue;
         }
-        continue;
+
+        if (result.kind === "none") {
+          // Team-name matching is the known fragile point (see the comment
+          // atop lib/scores.ts) -- a game that's already kicked off but
+          // still isn't matching is worth knowing about immediately, not
+          // guessing at blind after someone notices the Scoreboard looks
+          // wrong. A game that just hasn't started yet is normal and not
+          // logged; ESPN may simply not have posted it yet.
+          if (new Date(g.kickoff).getTime() < now) {
+            console.warn(
+              `[sync] no ESPN match for "${g.away_team} @ ${g.home_team}" ` +
+                `(kickoff ${g.kickoff}) -- check normalizeTeam() in lib/scores.ts ` +
+                `against ESPN's actual name for these teams`
+            );
+          }
+          continue;
+        }
+
+        hit = result.event;
       }
       matched++;
 

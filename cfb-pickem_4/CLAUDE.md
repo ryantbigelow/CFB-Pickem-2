@@ -156,6 +156,36 @@ ESPN's real game page (`https://www.espn.com/college-football/game/_/gameId/<esp
 — check `normalizeTeam()` in `lib/scores.ts` first if a card that should
 clearly be matched still isn't clickable.
 
+**The fuzzy match rule can collide two genuinely different teams — this
+already cost a real grade once.** `sameGame()`'s substring/superstring
+check ("Miami" should match "Miami Hurricanes") is exactly what let
+Virginia's game get grouped with the wrong ESPN event: "Virginia" is a
+real substring of "West Virginia" AND "Virginia Tech" — three different
+programs — and the same shape recurs all over college football (any
+"X" / "X State" pair: Kansas/Kansas State, Ohio/Ohio State, Washington/
+Washington State, Michigan/Michigan State, Mississippi/Mississippi
+State...). The old code took whichever ESPN event `.find()` hit first,
+silently — not a missed sync, a **wrong score attached to the game**.
+
+Fixed with `findEspnMatch()` in `lib/scores.ts`, used by `lib/sync.ts`
+instead of a bare `.find()`:
+1. Try an EXACT normalized-name match first — inherently unambiguous
+   whenever one exists.
+2. Fall back to the fuzzy rule only when it narrows to exactly ONE
+   candidate. Two or more candidates now returns `"ambiguous"` — logged
+   loudly with every candidate's team names and ESPN id — rather than
+   guessing. That game just doesn't auto-grade until `games.espn_id` is
+   set by hand (Supabase table editor) to the correct one.
+3. **A game that already has an `espn_id` skips name-matching entirely**
+   on every later sync — an exact id lookup in ESPN's event list. This
+   was the original intent of persisting `espn_id` in the first place
+   (see above); once a game is correctly pinned, no future ambiguous
+   pass can ever reassign it.
+
+If a game's score looks wrong (not just missing), check the server logs
+for an `AMBIGUOUS ESPN match` warning before assuming it's some other
+bug — that warning names the real culprit directly.
+
 ## Scores sync on page load, NOT on a cron
 
 Vercel Hobby allows daily crons only, so a frequent score cron isn't available —

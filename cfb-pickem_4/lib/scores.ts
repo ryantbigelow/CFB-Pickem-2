@@ -158,6 +158,53 @@ export function sameGame(
   return hit(ah, bh) && hit(aa, ba);
 }
 
+export type GameRef = { homeTeam: string; awayTeam: string; kickoff: string };
+
+export type MatchResult =
+  | { kind: "matched"; event: ScoreUpdate }
+  | { kind: "ambiguous"; candidates: ScoreUpdate[] }
+  | { kind: "none" };
+
+/**
+ * Find the one ESPN event for a game of ours, in two passes -- this is
+ * what actually closed the Virginia/West Virginia bug, not a normalizeTeam()
+ * tweak (there's nothing wrong to fix in either team's name).
+ *
+ *  1. EXACT match (both team names identical once normalized) first,
+ *     always -- it's inherently unambiguous whenever it exists, so it's
+ *     tried before the fuzzy pass gets a say at all.
+ *  2. FUZZY match (sameGame()'s substring/superstring rule, for real
+ *     naming mismatches like "Miami" vs "Miami Hurricanes") -- but ONLY
+ *     when it identifies exactly one candidate.
+ *
+ * The fuzzy rule is deliberately loose, and that's exactly the problem:
+ * "Virginia" is a genuine substring of BOTH "West Virginia" and "Virginia
+ * Tech" -- three different real programs, any two of which can easily
+ * kick off on the same Saturday. The old code took whichever candidate
+ * `.find()` happened to hit first, which doesn't just risk a missed sync
+ * -- it risks silently grading a pick against the WRONG game's score. If
+ * the fuzzy pass can't narrow it to exactly one candidate, this returns
+ * "ambiguous" instead of guessing, so it surfaces as a loud warning
+ * instead of a wrong result.
+ */
+export function findEspnMatch(ours: GameRef, events: ScoreUpdate[]): MatchResult {
+  const day = (d: string) => new Date(d).toISOString().slice(0, 10);
+  const sameDay = events.filter((e) => day(e.kickoff) === day(ours.kickoff));
+
+  const [oh, oa] = [normalizeTeam(ours.homeTeam), normalizeTeam(ours.awayTeam)];
+  const exact = sameDay.filter(
+    (e) => normalizeTeam(e.homeTeam) === oh && normalizeTeam(e.awayTeam) === oa
+  );
+  if (exact.length === 1) return { kind: "matched", event: exact[0] };
+  if (exact.length > 1) return { kind: "ambiguous", candidates: exact };
+
+  const fuzzy = sameDay.filter((e) => sameGame(ours, e));
+  if (fuzzy.length === 1) return { kind: "matched", event: fuzzy[0] };
+  if (fuzzy.length > 1) return { kind: "ambiguous", candidates: fuzzy };
+
+  return { kind: "none" };
+}
+
 /**
  * Grade a finished pick. Returns null while the game is unfinished.
  * Mirrors the `margin` logic in the live_picks view — keep them in sync.
