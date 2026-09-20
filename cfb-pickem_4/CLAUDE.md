@@ -62,6 +62,16 @@ turn enforcement, notifications.
 - **Rotation:** first picker one week picks last the next; everyone else moves up
   one. Both rounds use the same order — it does NOT snake. The app **displays**
   the order; it never enforces it. Sequencing happens in the group text.
+- **"Up next" on the Picks page is the same non-enforcement, made visible.**
+  `next_picker()` (`db/schema.sql`) walks `draft_board()`'s full sequence
+  (round 1 for everyone, then round 2, never snaking) and reports the first
+  slot whose player hasn't made that many picks yet — so if someone picks
+  out of turn, the indicator keeps naming whoever's actually still owed a
+  turn, it doesn't just advance because *a* pick came in. Nothing here
+  blocks or slows anyone down; the Pick dialog (`app/picker.tsx`) just adds
+  a one-line, non-blocking joke ("You trying to jump the gun?") when the
+  player chosen in the dropdown isn't the one currently indicated. Purely
+  cosmetic — never add a real restriction here; see the guiding principle.
 - **Four claimable slots per game:** spread/home, spread/away, total/over,
   total/under. Each claimed once league-wide per period. Two players may hold
   opposite sides of the same game.
@@ -350,3 +360,10 @@ actual call to `lib/preview.ts` against a real Anthropic key (nothing in this
 repo can safely fabricate an API key to test that end-to-end) — if the stored
 JSON from a real generation ever looks wrong, that's the untested seam to
 check first.
+
+**TEST 12** covers `next_picker()`: nobody's picked (first name in order),
+one pick moves it to the next name, a player finishing their whole
+allotment out of turn does NOT skip past whoever's actually still owed a
+turn, a real turn-taker's pick moves it on to round 2, and everyone
+finishing returns zero rows — all against a fresh load of `schema.sql`.
+Re-run this if you touch `draft_board()` or `next_picker()`.

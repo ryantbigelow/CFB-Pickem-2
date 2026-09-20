@@ -238,3 +238,77 @@ where home_team = 'Alabama' and away_team = 'Auburn' and espn_id is not null;
 
 select case when espn_id is null then 'UNMATCHED GAME STILL NULL (correct)' end as unmatched_check
 from live_picks where home_team = 'Georgia' and away_team = 'Clemson' limit 1;
+
+\echo ''
+\echo '=== TEST 12: next_picker() -- the Picks page "Up next" indicator ==='
+-- Isolated season so earlier tests' picks against the main '26-27' season
+-- can't perturb these counts.
+insert into players (name) values ('T12A'),('T12B'),('T12C');
+insert into seasons (label, stake_usd) values ('t12', 10);
+insert into season_players (season_id, player_id, base_order)
+select s.id, p.id, v.ord from seasons s, players p,
+ (values ('T12A',1),('T12B',2),('T12C',3)) v(nm,ord)
+where s.label = 't12' and p.name = v.nm;
+insert into periods (season_id, seq, label, status)
+select id, 1, 'Wk 1', 'open' from seasons where label = 't12';
+insert into games (period_id, external_id, home_team, away_team, kickoff)
+select pe.id, v.eid, 'Home', 'Away', now()
+from periods pe join seasons s on s.id = pe.season_id
+cross join (values ('g1'),('g2')) v(eid)
+where s.label = 't12';
+
+\echo 'nobody has picked yet -- should be T12A, first in the announced order'
+select name from next_picker(
+  (select pe.id from periods pe join seasons s on s.id=pe.season_id where s.label='t12'));
+
+\echo 'T12A picks once -- moves on to T12B, same as the description: "as soon'
+\echo 'as they pick it will move to the next picker"'
+insert into picks (period_id, player_id, game_id, market, side, line)
+select pe.id, pl.id, g.id, 'spread', 'home', -3
+from periods pe join seasons s on s.id=pe.season_id
+join games g on g.period_id=pe.id and g.external_id='g1', players pl
+where s.label='t12' and pl.name='T12A';
+select name from next_picker(
+  (select pe.id from periods pe join seasons s on s.id=pe.season_id where s.label='t12'));
+
+\echo 'T12C jumps the gun and uses BOTH their picks before T12B has made any'
+insert into picks (period_id, player_id, game_id, market, side, line)
+select pe.id, pl.id, g.id, 'spread', 'away', 3
+from periods pe join seasons s on s.id=pe.season_id
+join games g on g.period_id=pe.id and g.external_id='g1', players pl
+where s.label='t12' and pl.name='T12C';
+insert into picks (period_id, player_id, game_id, market, side, line)
+select pe.id, pl.id, g.id, 'total', 'over', 45
+from periods pe join seasons s on s.id=pe.season_id
+join games g on g.period_id=pe.id and g.external_id='g1', players pl
+where s.label='t12' and pl.name='T12C';
+
+select case when name = 'T12B' then 'CORRECT -- still T12B despite T12C jumping the gun'
+       else 'WRONG -- got '||name end as jump_the_gun_check
+from next_picker((select pe.id from periods pe join seasons s on s.id=pe.season_id where s.label='t12'));
+
+\echo 'T12B finally picks once -- moves on to T12As SECOND pick (round 2),'
+\echo 'since T12A only has one of their two picks in so far'
+insert into picks (period_id, player_id, game_id, market, side, line)
+select pe.id, pl.id, g.id, 'total', 'under', 45
+from periods pe join seasons s on s.id=pe.season_id
+join games g on g.period_id=pe.id and g.external_id='g1', players pl
+where s.label='t12' and pl.name='T12B';
+select name from next_picker(
+  (select pe.id from periods pe join seasons s on s.id=pe.season_id where s.label='t12'));
+
+\echo 'Everyone fills their last remaining slot -- no one left to indicate'
+insert into picks (period_id, player_id, game_id, market, side, line)
+select pe.id, pl.id, g.id, 'spread', 'home', -3
+from periods pe join seasons s on s.id=pe.season_id
+join games g on g.period_id=pe.id and g.external_id='g2', players pl
+where s.label='t12' and pl.name='T12A';
+insert into picks (period_id, player_id, game_id, market, side, line)
+select pe.id, pl.id, g.id, 'spread', 'away', 3
+from periods pe join seasons s on s.id=pe.season_id
+join games g on g.period_id=pe.id and g.external_id='g2', players pl
+where s.label='t12' and pl.name='T12B';
+
+select case when count(*) = 0 then 'CORRECT -- everyone has picked, no one left'
+       else 'WRONG -- next_picker still returned someone' end as everyone_done_check
+from next_picker((select pe.id from periods pe join seasons s on s.id=pe.season_id where s.label='t12'));

@@ -60,6 +60,32 @@ nav .period { font-size: 12px; color: var(--muted); }
 h1 { font-size: 21px; font-weight: 650; margin: 0 0 3px; letter-spacing: -0.01em; }
 .sub { font-size: 13px; color: var(--ink-2); margin: 0 0 22px; }
 
+/* "Up next" indicator on the Picks page -- announced, never enforced. */
+.upnext {
+  display: inline-block;
+  font-size: 14px;
+  margin: 6px 0 16px;
+  padding: 7px 14px;
+  background: color-mix(in srgb, var(--good) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--good) 30%, var(--border));
+  border-radius: 8px;
+}
+.upnext strong { color: var(--good); }
+
+/* The playful out-of-turn heads-up in the pick dialog -- a nudge, not a
+   warning, so it uses --warn (defined but otherwise unused) rather than
+   --neg, which everywhere else in this app means something actually failed. */
+.jump-hint {
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--ink);
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--border));
+  border-radius: 6px;
+}
+
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;

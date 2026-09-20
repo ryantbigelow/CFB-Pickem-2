@@ -309,6 +309,33 @@ language sql stable as $$
   order by 1;
 $$;
 
+-- Whose turn it is to pick, for the "Up next" indicator on the Picks page.
+-- The app never enforces the order (see CLAUDE.md -- "the group text is the
+-- product"), so this can't just be "how many picks are in so far": someone
+-- picking out of turn must NOT bump the indicator past whoever's actually
+-- still owed a turn. Instead: walk draft_board()'s full pick_number
+-- sequence (round 1 for everyone, then round 2 for everyone) and return the
+-- first slot whose player hasn't made that many picks yet. A player who
+-- jumps ahead just consumes their OWN slot early; everyone else's position
+-- in line is unaffected. Zero rows back means every slot this period is
+-- filled -- everyone's picked their full allotment.
+create or replace function next_picker(p_period_id uuid)
+returns table (player_id uuid, name text)
+language sql stable as $$
+  with counts as (
+    select pk.player_id, count(*) as made
+    from picks pk
+    where pk.period_id = p_period_id
+    group by pk.player_id
+  )
+  select db.player_id, db.name
+  from draft_board(p_period_id) db
+  left join counts c on c.player_id = db.player_id
+  where coalesce(c.made, 0) < db.round
+  order by db.pick_number
+  limit 1;
+$$;
+
 
 -- ============================================================
 --  THE THREE PAGES

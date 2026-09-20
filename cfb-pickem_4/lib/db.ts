@@ -120,3 +120,17 @@ export async function players() {
   const { data } = await db().from("players").select("id,name").order("name");
   return data ?? [];
 }
+
+export type NextPicker = { id: string; name: string };
+
+/**
+ * Whose turn it is, per next_picker() (db/schema.sql) -- null once every
+ * player has made their full allotment for the period. Never used to
+ * restrict picking, only to power the "Up next" indicator and the
+ * Picks page's out-of-turn heads-up; see CLAUDE.md.
+ */
+export async function nextPicker(periodId: string): Promise<NextPicker | null> {
+  const { data } = await db().rpc("next_picker", { p_period_id: periodId });
+  const row = data?.[0];
+  return row ? { id: row.player_id, name: row.name } : null;
+}

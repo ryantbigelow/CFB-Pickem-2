@@ -1,4 +1,4 @@
-import { db, activePeriod, players, Slot } from "@/lib/db";
+import { db, activePeriod, players, nextPicker, Slot } from "@/lib/db";
 import { refreshLinesIfStale, ago, creditsSummary } from "@/lib/lines";
 import Picker, { GameGroup } from "./picker";
 import PeriodSelector from "./period-selector";
@@ -40,10 +40,11 @@ export default async function Page() {
   // credit budget — that's the only thing that can pause it.
   const lines = await refreshLinesIfStale(period);
 
-  const [{ data: slots }, roster, { data: order }] = await Promise.all([
+  const [{ data: slots }, roster, { data: order }, upNext] = await Promise.all([
     db().from("slot_board").select("*").eq("period_id", period.id).order("kickoff"),
     players(),
     db().rpc("draft_board", { p_period_id: period.id }),
+    nextPicker(period.id),
   ]);
 
   // slot_board is one row per claimable slot; the picker wants them by game.
@@ -79,6 +80,20 @@ export default async function Page() {
           }))}
         />
       </div>
+
+      {/* Whose turn it is, per the announced order -- never enforced, just
+          reported. See next_picker() in db/schema.sql for how this stays
+          right even when someone picks out of turn. */}
+      <p className="upnext">
+        {upNext ? (
+          <>
+            Up next: <strong>{upNext.name}</strong>
+          </>
+        ) : (
+          "Everyone's picked for the week"
+        )}
+      </p>
+
       <p className="sub">
         {taken} of {target} picks in · lines {ago(lines.updatedAt)}
         {creditsSummary(lines.creditsLeft) &&
@@ -106,6 +121,7 @@ export default async function Page() {
           games={[...games.values()]}
           players={roster}
           periodId={period.id}
+          nextPicker={upNext}
         />
       )}
     </>

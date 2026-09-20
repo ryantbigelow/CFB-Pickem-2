@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Slot } from "@/lib/db";
+import type { Slot, NextPicker } from "@/lib/db";
 import LocalTime from "@/app/local-time";
 
 export type GameGroup = {
@@ -41,10 +41,12 @@ export default function Picker({
   games,
   players,
   periodId,
+  nextPicker,
 }: {
   games: GameGroup[];
   players: { id: string; name: string }[];
   periodId: string;
+  nextPicker: NextPicker | null;
 }) {
   const router = useRouter();
   const dlg = useRef<HTMLDialogElement>(null);
@@ -186,6 +188,17 @@ export default function Picker({
               actually agreed in the group text — that&apos;s the number this
               pick is graded against.
             </p>
+
+            {playerId && nextPicker && playerId !== nextPicker.id && (
+              // Purely a heads-up, never a block -- the order is announced,
+              // not enforced (see CLAUDE.md). Only shows once a player is
+              // actually chosen, and only when it's someone other than
+              // whoever next_picker() says is up.
+              <p className="jump-hint">
+                You trying to jump the gun? It&apos;s technically{" "}
+                {nextPicker.name}&apos;s turn.
+              </p>
+            )}
 
             <div style={{ marginTop: 14 }}>
               <label>PASSPHRASE</label>
