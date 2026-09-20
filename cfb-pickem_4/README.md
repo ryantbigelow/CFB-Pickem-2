@@ -31,7 +31,9 @@ Your Supabase project already exists. Four steps to a live site:
 to an already-deployed site**, also run `db/migrate-003.sql` the same way.
 **If you're adding the Scoreboard's ESPN game links to an already-deployed
 site**, also run `db/migrate-005.sql` the same way. **If you're adding the
-Picks page's "Up next" indicator**, also run `db/migrate-006.sql`.
+Picks page's "Up next" indicator**, also run `db/migrate-006.sql`. **If
+you're adding the Picks page's per-week date filtering and ESPN links**,
+also run `db/migrate-007.sql`.
 
 ### Adding the environment variables in Vercel
 

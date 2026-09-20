@@ -66,6 +66,19 @@ create table periods (
   picks_per_player int  not null default 2 check (picks_per_player >= 1),
   status           text not null default 'upcoming'
                    check (status in ('upcoming','open','locked','final')),
+
+  -- The real calendar dates this period's games fall in. Nullable on
+  -- purpose: the regular season's weeks are known up front (backfilled in
+  -- db/seed.sql and, for an existing database, db/migrate-007.sql) but the
+  -- postseason's exact dates aren't set until the season is underway --
+  -- leave those two null rather than guess. When both are set, they scope
+  -- which games get imported for this period AND which already-loaded
+  -- games get displayed for it (see lib/lines.ts and app/page.tsx) -- see
+  -- CLAUDE.md for why this matters: without it, an odds refresh has no way
+  -- to know "this week's games" from "every game left on the schedule."
+  window_start     date,
+  window_end       date,
+
   unique (season_id, seq)
 );
 
@@ -352,7 +365,8 @@ select g.period_id, g.id as game_id, g.external_id,
             when s.market = 'spread' and s.side = 'away' then -g.current_spread
             else g.current_total end as current_line,
        pk.id as pick_id, pl.name as owner, pk.line as locked_line, pk.result,
-       (pk.id is null and g.kickoff > now() and g.status = 'scheduled') as available
+       (pk.id is null and g.kickoff > now() and g.status = 'scheduled') as available,
+       g.espn_id
 from games g
 cross join (values ('spread','home'),('spread','away'),
                    ('total','over'),('total','under')) as s(market,side)

@@ -159,12 +159,27 @@ on normalized name AND kickoff day, never name alone.
 **`games.espn_id` is now actually persisted** (`lib/sync.ts`, on every
 match) — the comment above said to do this for a while before the column
 existed; `db/migrate-005.sql` added it. It does double duty: a stable id
-for re-matching, and it's what lets each Scoreboard card link out to
-ESPN's real game page (`https://www.espn.com/college-football/game/_/gameId/<espn_id>`,
-`app/scoreboard/page.tsx`). A game that hasn't matched ESPN yet has a null
-`espn_id`, so its card stays a plain, unlinked box rather than a dead link
-— check `normalizeTeam()` in `lib/scores.ts` first if a card that should
+for re-matching, and it's what lets a game's team names link out to
+ESPN's real game page (`https://www.espn.com/college-football/game/_/gameId/<espn_id>`
+— `app/scoreboard/page.tsx`'s cards, and `app/picker.tsx`'s matchup line
+on the Picks page). A game that hasn't matched ESPN yet has a null
+`espn_id`, so it stays plain, unlinked text rather than a dead link —
+check `normalizeTeam()` in `lib/scores.ts` first if a game that should
 clearly be matched still isn't clickable.
+
+**Matching is attempted before kickoff now too, not just once a game goes
+live.** `syncScores()` used to skip a scheduled game entirely until its
+kickoff time had passed — fine for scores (nothing to show yet anyway),
+but it meant a Picks-page game could never link out until it started,
+since that's the only place matching ever ran. Now: (1) `syncScores()`
+also runs from `app/page.tsx` (the Picks page), not just the Scoreboard,
+and (2) it fetches ESPN's scoreboard once per distinct kickoff **day**
+actually present in the period (`fetchScores(date)`, not the bare
+no-args call that only returns *today's* slate) — a whole week's games
+span several different days, and the old bare call would never see
+Wednesday's game while loading the Picks page on a Monday. "Worth
+checking" now also triggers on any game simply missing an `espn_id`, not
+only on one that's live or already kicked off.
 
 **The fuzzy match rule can collide two genuinely different teams — this
 already cost a real grade once.** `sameGame()`'s substring/superstring
@@ -195,6 +210,48 @@ instead of a bare `.find()`:
 If a game's score looks wrong (not just missing), check the server logs
 for an `AMBIGUOUS ESPN match` warning before assuming it's some other
 bug — that warning names the real culprit directly.
+
+## `periods.window_start`/`window_end` — the other half of "this week's games"
+
+The Odds API has no concept of "college football week 4" — `fetchSlate()`
+(`lib/odds.ts`) just returns every upcoming NCAAF game in the country,
+full stop. `refreshLinesIfStale()` (`lib/lines.ts`) used to tag every
+single one of those with whatever period happened to be open at that
+moment. That's exactly what let Week 2 and Week 3's games pollute Week
+4's Picks tab: each week's own refresh, while its own period was open,
+imported the ENTIRE remaining season under its own `period_id`, and
+those rows just sat there, never cleaned up, once the period moved on.
+(Week 1's games weren't part of the pile only because by the time this
+was noticed, Week 1's games were no longer "upcoming" to anything.)
+
+Fixed with a real per-period calendar window:
+- `periods.window_start`/`window_end` (nullable dates) hold each week's
+  actual real-world date range. Backfilled for the regular season in
+  `db/seed.sql` and, for an existing database, `db/migrate-007.sql` —
+  **these are 26-27-specific calendar dates, not a formula that
+  regenerates itself.** Update them by hand for a later season, or leave
+  them null and accept the old (unfiltered) behavior.
+- `refreshLinesIfStale()` now skips any event outside the period's
+  window before ever inserting it — stops the contamination at the
+  source, going forward.
+- `app/page.tsx` ALSO filters `slot_board`'s rows by the same window
+  before grouping them into games — belt-and-suspenders against any
+  already-mis-tagged row from before this fix, without needing a
+  one-time manual cleanup of the live data (though nothing stops you
+  from doing one; the stray rows are just inert, permanently invisible
+  clutter otherwise).
+- A period with no window set (the postseason, until its dates are
+  known for the year) keeps the old fully-unfiltered behavior — safe
+  there in practice, since the regular season's games are long done by
+  the time Chmp/Bowl 1/Bowl 2/CFB open.
+
+**Both filters compare the game's kickoff in `APP_TIMEZONE` (`lib/time.ts`),
+never a raw UTC date slice.** A Monday-night game at 8pm Central is
+already Tuesday in UTC — slicing the ISO string directly would misfile
+it into the following week, right at the one boundary where it actually
+matters. This is the exact ambiguity `lib/time.ts` was written to close
+for the Weekend Preview's "is it Saturday" check; reuse it here rather
+than reintroduce the bug in a new spot.
 
 ## Scores sync on page load, NOT on a cron
 

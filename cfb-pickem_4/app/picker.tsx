@@ -11,6 +11,7 @@ export type GameGroup = {
   home_team: string;
   kickoff: string;
   status: string;
+  espn_id: string | null;
   slots: Slot[];
 };
 
@@ -108,14 +109,27 @@ export default function Picker({
             <div className="game" key={g.game_id}>
               <div className="matchup">
                 <span className="teams">
-                  {g.away_team} @ {g.home_team}
+                  {/* Linkable once ESPN's game id is known (lib/sync.ts sets
+                      it on match, now attempted before kickoff too, not just
+                      once a game goes live) -- plain text otherwise, never a
+                      dead link. */}
+                  {g.espn_id ? (
+                    <a
+                      href={`https://www.espn.com/college-football/game/_/gameId/${g.espn_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {g.away_team} @ {g.home_team}
+                    </a>
+                  ) : (
+                    <>
+                      {g.away_team} @ {g.home_team}
+                    </>
+                  )}
                 </span>
                 <span className="when">
-                  {dead
-                    ? g.status === "final"
-                      ? "final"
-                      : "started"
-                    : <LocalTime iso={g.kickoff} />}
+                  {dead && (g.status === "final" ? "Final · " : "Started · ")}
+                  <LocalTime iso={g.kickoff} />
                 </span>
               </div>
               <div className="slots">

@@ -1,5 +1,7 @@
 import { db, activePeriod, players, nextPicker, Slot } from "@/lib/db";
 import { refreshLinesIfStale, ago, creditsSummary } from "@/lib/lines";
+import { syncScores } from "@/lib/sync";
+import { APP_TIMEZONE, todayKeyIn } from "@/lib/time";
 import Picker, { GameGroup } from "./picker";
 import PeriodSelector from "./period-selector";
 
@@ -40,6 +42,12 @@ export default async function Page() {
   // credit budget — that's the only thing that can pause it.
   const lines = await refreshLinesIfStale(period);
 
+  // Also sync scores/espn_id here, not just on the Scoreboard page — this is
+  // what lets a game's team names link out to ESPN (below) before it's even
+  // kicked off, not just once it's live. Free and throttled the same way
+  // (lib/sync.ts), so this costs nothing extra.
+  await syncScores(period.id);
+
   const [{ data: slots }, roster, { data: order }, upNext] = await Promise.all([
     db().from("slot_board").select("*").eq("period_id", period.id).order("kickoff"),
     players(),
@@ -47,9 +55,20 @@ export default async function Page() {
     nextPicker(period.id),
   ]);
 
+  // Belt-and-suspenders against the "every remaining game on the schedule"
+  // import bug (see lib/lines.ts): even if a stray row from another week
+  // ever ends up tagged with this period_id, it's filtered out here too, by
+  // the period's own real calendar window. A period with no window set (the
+  // postseason) shows everything, same as before.
+  const windowed = (slots ?? []).filter((s: Slot) => {
+    if (!period.window_start || !period.window_end) return true;
+    const day = todayKeyIn(APP_TIMEZONE, new Date(s.kickoff));
+    return day >= period.window_start && day <= period.window_end;
+  });
+
   // slot_board is one row per claimable slot; the picker wants them by game.
   const games = new Map<string, GameGroup>();
-  for (const s of (slots ?? []) as Slot[]) {
+  for (const s of windowed as Slot[]) {
     let g = games.get(s.game_id);
     if (!g) {
       g = {
@@ -58,6 +77,7 @@ export default async function Page() {
         home_team: s.home_team,
         kickoff: s.kickoff,
         status: s.status,
+        espn_id: s.espn_id,
         slots: [],
       };
       games.set(s.game_id, g);
@@ -65,7 +85,7 @@ export default async function Page() {
     g.slots.push(s);
   }
 
-  const taken = (slots ?? []).filter((s: Slot) => s.pick_id).length;
+  const taken = windowed.filter((s: Slot) => s.pick_id).length;
   const target = roster.length * period.picks_per_player;
 
   return (

@@ -48,6 +48,7 @@ import {
   CREDIT_FLOOR,
   MONTHLY_CREDIT_BUDGET,
 } from "./odds";
+import { APP_TIMEZONE, todayKeyIn } from "./time";
 
 export const LINES_STALE_AFTER_MS = 60 * 60 * 1000; // once per hour
 
@@ -86,7 +87,7 @@ async function writeCredits(n: number | null) {
 }
 
 export async function refreshLinesIfStale(
-  period: { id: string },
+  period: { id: string; window_start?: string | null; window_end?: string | null },
   force = false
 ): Promise<LinesResult> {
   const s = db();
@@ -123,7 +124,35 @@ export async function refreshLinesIfStale(
     const events = await fetchSlate();
     const stamp = new Date().toISOString();
 
-    const rows = events.map((e) => {
+    // fetchSlate() returns EVERY upcoming NCAAF game in the country, not
+    // just this week's -- there's no such thing as "this week" to The Odds
+    // API. Without this filter, every game still on the schedule at all
+    // gets tagged with whatever period happens to be open right now. That's
+    // exactly what let Week 2 and Week 3's games bleed into Week 4's Picks
+    // tab: each week's refresh, while ITS period was open, imported the
+    // entire remaining season under its own period_id, and those rows never
+    // got cleaned up once the period moved on. window_start/window_end
+    // (periods table -- see db/schema.sql) are this period's real calendar
+    // dates; skip anything outside them. A period with no window set (the
+    // postseason, until its dates are known) keeps the old unfiltered
+    // behavior -- safe there since the regular season's games are long done
+    // by the time those periods open.
+    //
+    // The day a game "falls on" has to be judged in the pool's own
+    // timezone, not raw UTC -- a Monday-night game kicking off at 8pm
+    // Central is already Tuesday in UTC. Slicing the ISO string directly
+    // would misfile it into the following week, right at the boundary
+    // where it matters most. This is the exact ambiguity lib/time.ts was
+    // written to close (see its own comment) -- reuse it here rather than
+    // reintroduce a raw UTC slice.
+    const inWindow = (iso: string) => {
+      if (!period.window_start || !period.window_end) return true;
+      const day = todayKeyIn(APP_TIMEZONE, new Date(iso));
+      return day >= period.window_start && day <= period.window_end;
+    };
+    const inScope = events.filter((e) => inWindow(e.commence_time));
+
+    const rows = inScope.map((e) => {
       const bk = e.bookmakers?.find((b) => b.key === BOOK);
       const spreads = bk?.markets?.find((m) => m.key === "spreads");
       const totals = bk?.markets?.find((m) => m.key === "totals");

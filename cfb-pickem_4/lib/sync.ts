@@ -14,6 +14,7 @@
 
 import { db } from "./db";
 import { fetchScores, findEspnMatch, grade } from "./scores";
+import { APP_TIMEZONE, todayKeyIn } from "./time";
 
 export const STALE_AFTER_MS = 25_000;
 
@@ -43,13 +44,16 @@ export async function syncScores(
 
   if (!games?.length) return none;
 
-  // Nothing to do if every game is still days away or already finished and
-  // graded — no reason to call ESPN just because someone opened the page.
+  // Worth a check if anything might have live-score news (in progress, or
+  // scheduled with kickoff already passed) OR simply doesn't have an
+  // espn_id pinned yet -- that second case is what lets a game's Picks-page
+  // link out to ESPN before it's even kicked off, not just once it's live.
   const now = Date.now();
   const worthChecking = games.some(
     (g) =>
       g.status === "in_progress" ||
-      (g.status === "scheduled" && new Date(g.kickoff).getTime() < now)
+      (g.status === "scheduled" && new Date(g.kickoff).getTime() < now) ||
+      !g.espn_id
   );
 
   const freshest = games.reduce(
@@ -64,7 +68,16 @@ export async function syncScores(
   let graded = 0;
 
   try {
-    const espn = await fetchScores();
+    // fetchScores() with no argument only returns TODAY's slate -- fine for
+    // the Scoreboard on a Saturday, not enough to id-match a whole week's
+    // games from the Picks page on, say, a Tuesday. Fetch once per distinct
+    // kickoff day actually present in this period instead. Judged in the
+    // pool's own timezone (see lib/lines.ts's comment on the same trap) so
+    // a late-night game doesn't fetch the wrong calendar day.
+    const dates = new Set(
+      games.map((g) => todayKeyIn(APP_TIMEZONE, new Date(g.kickoff)).replace(/-/g, ""))
+    );
+    const espn = (await Promise.all([...dates].map((d) => fetchScores(d)))).flat();
     const stamp = new Date().toISOString();
 
     for (const g of games) {

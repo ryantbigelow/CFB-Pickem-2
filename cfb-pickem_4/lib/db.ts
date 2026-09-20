@@ -65,6 +65,7 @@ export type Slot = {
   locked_line: number | null;
   result: string | null;
   available: boolean;
+  espn_id: string | null;
 };
 
 export type LivePick = {
