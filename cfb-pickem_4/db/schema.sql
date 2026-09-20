@@ -340,7 +340,7 @@ left join players pl on pl.id = pk.player_id;
 create or replace view live_picks as
 select pk.id as pick_id, g.period_id, pl.name as player,
        g.away_team, g.home_team, g.away_score, g.home_score,
-       g.status, g.period_clock, g.kickoff, g.espn_id,
+       g.status, g.period_clock, g.kickoff,
        pk.market, pk.side, pk.line, pk.result,
        describe_pick(pk.game_id, pk.market, pk.side, pk.line, pk.price) as bet,
        case
@@ -351,7 +351,11 @@ select pk.id as pick_id, g.period_id, pl.name as player,
               then (g.away_score - g.home_score) + pk.line
          when pk.side = 'over'  then (g.home_score + g.away_score) - pk.line
          else pk.line - (g.home_score + g.away_score)
-       end as margin          -- > 0 covering, < 0 losing, = 0 push
+       end as margin,         -- > 0 covering, < 0 losing, = 0 push
+       g.espn_id               -- kept LAST -- CREATE OR REPLACE VIEW refuses
+                                -- to insert a column anywhere but the end
+                                -- (it reads that as renaming every column
+                                -- after it) -- see db/migrate-005.sql
 from picks pk
 join games g   on g.id = pk.game_id
 join players pl on pl.id = pk.player_id;
