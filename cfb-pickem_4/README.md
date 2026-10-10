@@ -91,6 +91,20 @@ If Saturday morning arrives and `ANTHROPIC_API_KEY` isn't set yet, the cron
 just fails quietly and the page says "check back soon" instead of
 crashing — add the key and it picks up the very next Saturday.
 
+**If the page is empty on a Saturday, read the line under "Nothing here
+yet."** Every attempt to generate the preview — the automatic one or a
+manual hit on `/api/generate-preview?key=<passphrase>` — leaves a note
+there saying what happened and when. "Request rejected" at 7am means
+Vercel's cron couldn't prove who it was (`CRON_SECRET` missing or
+mismatched); anything else is the actual error. Hitting that URL by hand
+generates the preview on the spot, same as always.
+
+The column also knows about games that already happened by Saturday
+morning (Tuesday/Thursday/Friday night), roasts the losers and credits the
+winners by the real score, and only ever picks its Lock of the Week from
+games that haven't kicked off yet. "Guido" and "rigged" make occasional
+appearances — deliberately not every week.
+
 ### About the weekly week-to-week advance
 
 Which period (week) is open for picks used to be entirely manual — a hand-

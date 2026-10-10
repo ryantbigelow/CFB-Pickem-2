@@ -1,4 +1,6 @@
 import { db, activePeriod } from "@/lib/db";
+import { lastPreviewAttempt } from "@/lib/preview";
+import { APP_TIMEZONE } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +52,21 @@ export default async function WeekendPreview() {
   const preview = previewRows?.[0] as PreviewRow | undefined;
 
   if (!preview) {
+    // Say WHY it's empty, not just that it is. Every run of the generator
+    // (including the cron getting turned away at the door) leaves a note
+    // in app_state -- see recordPreviewAttempt() in lib/preview.ts.
+    const attempt = await lastPreviewAttempt().catch(() => null);
+    const when = attempt
+      ? new Intl.DateTimeFormat("en-US", {
+          timeZone: APP_TIMEZONE,
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }).format(new Date(attempt.at))
+      : null;
+
     return (
       <>
         <h1>Weekend Preview</h1>
@@ -59,6 +76,12 @@ export default async function WeekendPreview() {
             Nothing here yet — this fills in Saturday morning once the
             week&apos;s picks are in.
           </div>
+          {attempt && (
+            <p className="hint" style={{ textAlign: "center", marginTop: 4 }}>
+              Last attempt {when}: {attempt.ok ? "" : "failed — "}
+              {attempt.detail}
+            </p>
+          )}
         </div>
       </>
     );

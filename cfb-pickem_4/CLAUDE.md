@@ -315,10 +315,48 @@ same joke shapes, same opening line, week after week. `lib/preview.ts` now:
   win/loss `streaks`, and the week's overall `weeklyLean` (chalk vs. dogs,
   overs vs. unders across the whole pool).
 
-If it starts feeling stale again, the next lever is more data (head-to-head
-rivalries, biggest blowout cover/bust, money-leaderboard movement), not a
+If it starts feeling stale again, the next lever is more data, not a
 longer "please be funnier" instruction — the model needs new material, not
-more encouragement.
+more encouragement. (Second round of this, October 2026: a `FORMAT_MENU`
+— the *shape* of the player section: letter grades, power rankings,
+scouting report, prop bets... — chosen independently of the voice, so
+12 voices × 8 shapes = 96 briefs; three prior columns instead of two,
+with their opening sentences extracted into an explicit `bannedOpeners`
+list; and new material each week: `headToHead` (two players on opposite
+sides of one game), `moneyStandings`, and `lockRecord` — the AI's own
+Lock-of-the-Week record, so it can own last week's whiff.)
+
+**Games that already happened by Saturday morning are news, not previews.**
+`generateWeekendPreview()` now forces a score sync first
+(`syncScores(period.id, true)`), then splits the week's picks into
+`alreadyPlayed` (final, with the real score, result, and cover margin),
+`inProgress`, and `upcoming`. The prompt leads with what already
+happened, roasts the losers and credits the winners by score, and —
+enforced in code, not just asked — the Lock may only come from
+`lockCandidates` (upcoming games). A lock on a finished game would be
+stored and then "graded" by History as a free hit; the generator throws
+instead. If every game is already final, `lock` is null and the row's
+lock columns are null (the page already handles a missing lock).
+
+**Two inside jokes, gated by code.** Ryan asked for "Guido" (a shadowy
+fixer the family blames for every loss) and "rigged" (the standing
+position that any bad result was) — *from time to time*, not every
+week. So `runningJokes` is decided from the period hash (Guido roughly
+half the weeks, "rigged" roughly a third) and the prompt says use each at
+most once and only when its flag is true. Letting the model decide would
+mean both, every week; occasional is what makes them land. Both are bits
+about the games, never about a person — the PG-13 rule still applies.
+
+**The page now says *why* it's empty.** Every run of
+`/api/generate-preview` — generated, skipped, failed, or rejected at the
+door with a 401 — writes `app_state.weekend_preview_last_attempt`
+(`recordPreviewAttempt()` in `lib/preview.ts`), and the Weekend Preview
+page shows that line under "Nothing here yet." Three of the first four
+Saturdays failed for three different reasons, and each one cost a round
+of "hit the URL by hand and paste what it says." A 401 recorded at 7am
+Central on a Saturday means `CRON_SECRET` is missing or mismatched in
+Vercel; anything else is the real error message. Check that line before
+anything else.
 
 **`max_tokens` has to cover thinking too, and it grew.** Sonnet 5 thinks by
 default (adaptive), spending part of the response's token budget on

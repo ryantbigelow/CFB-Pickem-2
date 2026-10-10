@@ -14,17 +14,27 @@
  * system prompt below tells the model that explicitly, so the jokes stay
  * confidently written without ever risking a confidently WRONG stat about
  * a real team.
+ *
+ * VARIETY IS ENFORCED BY CODE, NOT REQUESTED FROM THE MODEL. Every lever
+ * that keeps one Saturday from reading like the last is decided here, per
+ * period, before the model sees a word: the voice (STYLE_MENU), the shape
+ * of the player section (FORMAT_MENU), which running jokes are even on the
+ * table this week (runningJokes), and a verbatim list of recent openers it
+ * is told not to echo. Asking a model to "be different this time" doesn't
+ * work; handing it a different brief does.
  */
 
 import { db, activePeriod, players, LivePick } from "./db";
 import { mostRecentSeasonFor } from "./legacy-history";
+import { syncScores } from "./sync";
+import { APP_TIMEZONE } from "./time";
 
 const MODEL = "claude-sonnet-5";
 
-// A menu of framing devices for the week's column. Picked deterministically
-// per period (see the hash below), never left to the model to choose --
-// that's what actually forces different weeks to read differently, instead
-// of relying on the model to remember to vary itself.
+// The VOICE of the week's column. Picked deterministically per period (see
+// the hash below), never left to the model to choose -- that's what
+// actually forces different weeks to read differently, instead of relying
+// on the model to remember to vary itself.
 const STYLE_MENU = [
   "a sports-radio call-in host who's taken this way too personally",
   "a courtroom verdict from a judge who has seen every excuse before",
@@ -36,17 +46,76 @@ const STYLE_MENU = [
   "a weather forecaster tracking a slow-moving disaster",
   "an awards-show host reading nominees who all think they've already won",
   "a movie-trailer voiceover for a sequel nobody wanted",
+  "a true-crime podcast host who has clearly already decided who did it",
+  "a museum audio guide walking visitors past a series of bad decisions",
+];
+
+// The SHAPE of the player section -- a second, independent axis from the
+// voice above. Twelve voices times eight shapes is 96 combinations before
+// the actual picks even come into it, which is the point: the column
+// can't settle into one groove when the brief itself keeps moving.
+const FORMAT_MENU = [
+  "LETTER GRADES: every player blurb opens with a grade (A+ through F) for their week so far, then justifies it",
+  "POWER RANKINGS: order the players best-to-worst, open each blurb with a rank and an arrow (up/down/flat) vs. last week",
+  "SCOUTING REPORT: each blurb is a deadpan scouting breakdown -- strengths, weaknesses, intangibles",
+  "SUPERLATIVES: each player gets a mock award title to open their blurb ('Most Likely To...', 'Lifetime Achievement in...')",
+  "FORECAST: each blurb is a weather-style forecast for that player's weekend -- conditions, percent chance of covering, any advisories",
+  "PROP BETS: for each player, invent a fake prop bet about them ('over/under 1.5 excuses in the group text by Sunday') and take a side",
+  "CHART NOTES: each blurb is a medical chart entry -- presenting symptoms, diagnosis, prognosis",
+  "YEARBOOK: most blurbs are a single punchy caption-length line; spend the full roast on just one or two players who have it coming",
 ];
 
 type GeneratedContent = {
   intro: string;
   players: { name: string; blurb: string }[];
-  lock: { ref: string; call: "win" | "lose"; blurb: string };
+  lock: { ref: string; call: "win" | "lose"; blurb: string } | null;
 };
 
 export type PreviewResult =
   | { skipped: true; reason: string }
   | { skipped: false; periodLabel: string };
+
+/* ------------------------------------------------------------------ *
+ * ATTEMPT LOG
+ *
+ * Every run of the generator -- including a rejected cron credential,
+ * which never even reaches generateWeekendPreview() -- records what
+ * happened to app_state, so the Weekend Preview page can say WHY it's
+ * empty instead of just "nothing here yet." Three of the first four
+ * Saturdays failed for three different reasons (a parsing bug, a
+ * truncated response, an unknown), and each one cost a round of "hit
+ * the URL by hand and tell me what it says." This makes the app tell us.
+ * ------------------------------------------------------------------ */
+
+const ATTEMPT_KEY = "weekend_preview_last_attempt";
+
+export type PreviewAttempt = { at: string; ok: boolean; detail: string };
+
+export async function recordPreviewAttempt(ok: boolean, detail: string): Promise<void> {
+  try {
+    await db().from("app_state").upsert({
+      key: ATTEMPT_KEY,
+      value: JSON.stringify({ at: new Date().toISOString(), ok, detail } satisfies PreviewAttempt),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    // Diagnostics must never be the thing that breaks the real path.
+    console.error("[preview] couldn't record attempt:", e);
+  }
+}
+
+export async function lastPreviewAttempt(): Promise<PreviewAttempt | null> {
+  const { data } = await db().from("app_state").select("value").eq("key", ATTEMPT_KEY);
+  const raw = data?.[0]?.value;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as PreviewAttempt;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 
 export async function generateWeekendPreview(force = false): Promise<PreviewResult> {
   const active = await activePeriod();
@@ -63,6 +132,17 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
       .select("id")
       .eq("period_id", period.id);
     if (existing?.length) return { skipped: true, reason: "already generated for this period" };
+  }
+
+  // Midweek games (Tuesday MACtion, Thursday/Friday night) are usually
+  // final by Saturday morning. Pull scores and grade them NOW, so the
+  // column can roast an actual loss with an actual score instead of
+  // previewing a game that's already over. force=true skips the 25s
+  // throttle; ESPN is free, and this runs once a week.
+  try {
+    await syncScores(period.id, true);
+  } catch (e) {
+    console.error("[preview] pre-generation score sync failed (continuing):", e);
   }
 
   const roster = await players();
@@ -85,6 +165,50 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
   // ends up stored for the History page to grade later.
   const refs = currentPicks.map((p, i) => ({ ref: String(i + 1), pick: p }));
 
+  // Kickoffs in the pool's own timezone ("Thu, Oct 8, 7:30 PM"), so the
+  // model can say "Thursday night" and mean it. Same reasoning as every
+  // other date in this app: never let the server's UTC clock pick the day.
+  const kickoffFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const describe = ({ ref, pick }: (typeof refs)[number]) => ({
+    ref,
+    player: pick.player,
+    game: `${pick.away_team} @ ${pick.home_team}`,
+    bet: pick.bet,
+    kickoff: kickoffFmt.format(new Date(pick.kickoff)),
+  });
+
+  // Split the week's picks by what the model can actually KNOW about them.
+  // A final has a result -- it's news, not a prediction. The lock must
+  // come from the upcoming list only; locking a game that's over isn't
+  // confidence, it's cheating, and it's validated below, not just asked.
+  const alreadyPlayed = refs
+    .filter((r) => r.pick.status === "final" && r.pick.home_score !== null)
+    .map((r) => ({
+      ...describe(r),
+      finalScore: `${r.pick.away_team} ${r.pick.away_score}, ${r.pick.home_team} ${r.pick.home_score}`,
+      result: r.pick.result ?? "ungraded",
+      // > 0 covered by that much, < 0 missed by that much, 0 push.
+      coverMargin: r.pick.margin,
+    }));
+  const inProgress = refs
+    .filter((r) => r.pick.status === "in_progress")
+    .map((r) => ({
+      ...describe(r),
+      currentScore: `${r.pick.away_team} ${r.pick.away_score ?? 0}, ${r.pick.home_team} ${r.pick.home_score ?? 0}`,
+      clock: r.pick.period_clock,
+    }));
+  const upcoming = refs
+    .filter((r) => r.pick.status === "scheduled")
+    .map(describe);
+  const lockCandidates = upcoming.map((u) => u.ref);
+
   // Season-to-date record, from the same verified view Results uses.
   const { data: recordsData } = await s
     .from("player_records")
@@ -96,6 +220,15 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
     losses: r.losses,
     pushes: r.pushes,
   }));
+
+  // The only number anyone in this pool actually cares about.
+  const { data: payoutRows } = await s
+    .from("payouts")
+    .select("name,net_usd")
+    .eq("season_id", season.id);
+  const moneyStandings = (payoutRows ?? [])
+    .map((r: any) => ({ player: r.name, netDollars: Number(r.net_usd) }))
+    .sort((a, b) => b.netDollars - a.netDollars);
 
   // Prior period ("last week"), or — on a season's very first period —
   // each player's most recent archived season, since there's no prior
@@ -174,8 +307,7 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
 
   // Each player's current streak (win or loss, pushes ignored -- a push is
   // neither, same convention as the money math), chronological by period
-  // seq this season. Fresh ammo the model hasn't had before: "hot" and
-  // "cold" are a different angle than a flat season record.
+  // seq this season.
   const { data: gradedPicks } = await s
     .from("picks")
     .select("player_id,period_id,result")
@@ -213,8 +345,7 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
   }
 
   // This week's overall "lean" across the whole pool -- chalk-heavy or
-  // dog-heavy, overs or unders. Another fresh angle: a vibe about the
-  // *week*, not just any one player.
+  // dog-heavy, overs or unders. A vibe about the *week*, not any one player.
   let favorites = 0, dogs = 0, overs = 0, unders = 0;
   for (const { pick } of refs) {
     if (pick.market === "spread") {
@@ -225,16 +356,55 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
   }
   const weeklyLean = { favorites, dogs, overs, unders };
 
-  // The last couple of weeks' previews, verbatim, so the model has
-  // something concrete to NOT repeat -- see SYSTEM_PROMPT's anti-rerun
-  // rule. Excludes the current period so a re-run (?force=1) never sees
-  // itself as "last week."
+  // Two players on opposite sides of the same game -- a family feud with
+  // an actual scoreboard. Spread home vs. away, or over vs. under.
+  const bySlot = new Map<string, { player: string; bet: string }[]>();
+  for (const { pick } of refs) {
+    const key = `${pick.away_team} @ ${pick.home_team}|${pick.market}`;
+    const arr = bySlot.get(key) ?? [];
+    arr.push({ player: pick.player, bet: pick.bet });
+    bySlot.set(key, arr);
+  }
+  const headToHead = [...bySlot.entries()]
+    .filter(([, sides]) => sides.length >= 2)
+    .map(([key, sides]) => ({ game: key.split("|")[0], market: key.split("|")[1], sides }));
+
+  // The AI's OWN track record on the Lock of the Week -- so it can own a
+  // whiff instead of pretending every call was a lock. Self-deprecation
+  // is both funnier and different every week by construction.
+  const { data: lockRows } = await s
+    .from("weekend_preview_locks")
+    .select("seq,period,player,bet,lock_call,call_correct")
+    .eq("season_id", season.id)
+    .neq("period_id", period.id);
+  const graded = (lockRows ?? []).filter((r: any) => r.call_correct !== null);
+  const latest = (lockRows ?? []).sort((a: any, b: any) => b.seq - a.seq)[0];
+  const lockRecord = {
+    hits: graded.filter((r: any) => r.call_correct === true).length,
+    misses: graded.filter((r: any) => r.call_correct === false).length,
+    lastWeek: latest
+      ? {
+          period: latest.period,
+          player: latest.player,
+          bet: latest.bet,
+          call: latest.lock_call,
+          correct: latest.call_correct, // null = that game hasn't graded
+        }
+      : null,
+  };
+
+  // The last few weeks' previews, verbatim, so the model has something
+  // concrete to NOT repeat -- see SYSTEM_PROMPT's anti-rerun rule. The
+  // first sentence of each intro and lock blurb is also pulled out into an
+  // explicit do-not-echo list, since openers are where reruns show first.
+  // Excludes the current period so a re-run (?force=1) never sees itself
+  // as "last week."
   const { data: recentRows } = await s
     .from("weekend_previews")
     .select("period_id,intro,players,lock_blurb,generated_at")
     .neq("period_id", period.id)
     .order("generated_at", { ascending: false })
-    .limit(2);
+    .limit(3);
   let recentPreviews: { period: string; intro: string; players: any; lockBlurb: string | null }[] = [];
   if (recentRows?.length) {
     const { data: labelRows } = await s
@@ -249,47 +419,77 @@ export async function generateWeekendPreview(force = false): Promise<PreviewResu
       lockBlurb: r.lock_blurb,
     }));
   }
+  const firstSentence = (text: string | null | undefined) =>
+    (text ?? "").split(/(?<=[.!?])\s+/)[0]?.trim() ?? "";
+  const bannedOpeners = recentPreviews
+    .flatMap((r) => [firstSentence(r.intro), firstSentence(r.lockBlurb)])
+    .filter(Boolean);
 
-  // A structural frame for the week, picked deterministically from the
-  // period itself (not left to the model) so consecutive weeks are
-  // actually shaped differently, not just differently worded. Stable
-  // across a ?force=1 re-run of the same week on purpose.
+  // Everything variety-related is decided HERE, from the period id, not by
+  // the model: the voice, the shape, and which running jokes are even
+  // available this week. Different bits of the same hash drive each one so
+  // they vary independently. Stable across a ?force=1 re-run of the same
+  // week on purpose.
   let hash = 0;
   for (const ch of period.id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   const styleForThisWeek = STYLE_MENU[hash % STYLE_MENU.length];
+  const formatForThisWeek = FORMAT_MENU[(hash >>> 4) % FORMAT_MENU.length];
+  const runningJokes = {
+    // "From time to time" / "occasionally" -- about half the weeks for
+    // Guido, about a third for "rigged." Letting the model decide would
+    // mean both, every week, because models use whatever they're handed.
+    guido: (hash >>> 8) % 2 === 0,
+    rigged: (hash >>> 10) % 3 === 0,
+  };
 
   const dataForModel = {
     period: { label: period.label, season: season.label },
     styleForThisWeek,
-    currentPicks: refs.map(({ ref, pick }) => ({
-      ref,
-      player: pick.player,
-      game: `${pick.away_team} @ ${pick.home_team}`,
-      bet: pick.bet,
-    })),
+    formatForThisWeek,
+    runningJokes,
+    alreadyPlayed,
+    inProgress,
+    upcoming,
+    lockCandidates,
+    headToHead,
     seasonRecords,
+    moneyStandings,
     priorPeriod,
+    streaks,
     tendencies: Object.fromEntries(tendencies),
     teamHistoryThisSeason: Object.fromEntries(teamRecord),
-    streaks,
     weeklyLean,
+    lockRecord,
     recentPreviews,
+    bannedOpeners,
   };
 
   const content = await callClaude(dataForModel);
 
-  const lockEntry = refs.find((r) => r.ref === content.lock?.ref);
-  if (!lockEntry) {
-    throw new Error(`Model's lock.ref "${content.lock?.ref}" doesn't match any current pick.`);
+  // The lock has to be a real, still-upcoming pick. This is validated, not
+  // trusted: a lock on a game that already finished would be stored, then
+  // "graded" by the History page as a free hit.
+  let lockEntry: (typeof refs)[number] | undefined;
+  if (lockCandidates.length > 0) {
+    if (!content.lock) {
+      throw new Error("Model returned no lock even though upcoming picks exist.");
+    }
+    if (!lockCandidates.includes(content.lock.ref)) {
+      throw new Error(
+        `Model's lock.ref "${content.lock.ref}" isn't an upcoming pick ` +
+          `(valid: ${lockCandidates.join(", ")}).`
+      );
+    }
+    lockEntry = refs.find((r) => r.ref === content.lock!.ref);
   }
 
   const row = {
     period_id: period.id,
     intro: content.intro,
     players: content.players,
-    lock_pick_id: lockEntry.pick.pick_id,
-    lock_call: content.lock.call,
-    lock_blurb: content.lock.blurb,
+    lock_pick_id: lockEntry?.pick.pick_id ?? null,
+    lock_call: lockEntry ? content.lock!.call : null,
+    lock_blurb: lockEntry ? content.lock!.blurb : null,
     generated_at: new Date().toISOString(),
   };
 
@@ -313,15 +513,13 @@ async function callClaude(data: unknown): Promise<GeneratedContent> {
     body: JSON.stringify({
       model: MODEL,
       // Sonnet 5 thinks by default -- that reasoning draws from the same
-      // max_tokens budget as the actual column, and this prompt got
-      // noticeably bigger (last week's full column, streaks, weekly lean)
-      // without this ever being raised. 2500 was already thin; the two
-      // together truncated a real response mid-JSON (stop_reason=
-      // max_tokens) rather than finishing it. Room to breathe, plus
-      // effort:"medium" so thinking stays bounded on what's fundamentally
-      // a styled writing task, not one that benefits from deep reasoning
-      // -- keeps this comfortably inside the route's 60s maxDuration too.
-      max_tokens: 6000,
+      // max_tokens budget as the actual column. 2500 once truncated a real
+      // response mid-JSON (stop_reason=max_tokens); the brief has grown
+      // again since (played-game recaps, head-to-heads, the lock record),
+      // so there's real headroom here. effort:"medium" keeps the thinking
+      // bounded on what's fundamentally a styled writing task, which is
+      // also what keeps this comfortably inside the route's 60s maxDuration.
+      max_tokens: 8000,
       output_config: { effort: "medium" },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: JSON.stringify(data) }],
@@ -354,8 +552,11 @@ async function callClaude(data: unknown): Promise<GeneratedContent> {
         `content blocks=[${blockTypes}]): ${text.slice(0, 300)}`
     );
   }
-  if (!parsed.intro || !Array.isArray(parsed.players) || !parsed.lock?.ref || !parsed.lock?.call) {
-    throw new Error("Model response is missing required fields.");
+  if (!parsed.intro || !Array.isArray(parsed.players)) {
+    throw new Error("Model response is missing required fields (intro, players).");
+  }
+  if (parsed.lock !== null && (!parsed.lock?.ref || !parsed.lock?.call || !parsed.lock?.blurb)) {
+    throw new Error("Model response's lock is malformed (needs ref, call, blurb, or null).");
   }
   return parsed;
 }
@@ -381,58 +582,103 @@ not a uniform roast:
   joke shape (record, then tendency, then jab) six times in a row reads
   like a template, not a column.
 
-DON'T REPEAT LAST WEEK: the DATA JSON's "recentPreviews" field has the
-actual text of your last one or two columns. Read it before you write a
-word. Then:
-- Never reuse a joke, a phrase, a metaphor, or a sentence shape from it,
-  even about a different player. If "recentPreviews" called someone's
-  pick "brave" or opened with "welcome back," this week finds a different
-  way in.
-- Don't default to the same paragraph order every week (intro sets the
-  scene, then records, then tendency, then jab) just because that's what
-  ran last time — mix up where in a blurb the joke lands.
+THIS WEEK'S BRIEF — two independent dials, both set for you, both mandatory:
+- "styleForThisWeek" is the VOICE: a persona or framing device. Write the
+  whole column — intro, every blurb, the lock — loosely filtered through
+  that lens: its vocabulary, its rhythm, its verbal tics. Don't announce
+  the bit ("as your sports-radio host, I...") and don't force a sentence
+  into character when it stops being funny; just let it flavor everything.
+- "formatForThisWeek" is the SHAPE of the player section: how each blurb
+  is structured. Follow it literally — it's what makes this week
+  structurally different from last week, not merely reworded. If the
+  format calls for ordering the players (power rankings), order the
+  "players" array that way.
+
+GAMES THAT ALREADY HAPPENED: "alreadyPlayed" lists picks whose games are
+already FINAL (Tuesday/Thursday/Friday games, mostly), with the real
+final score and that pick's result. This is NEWS, not a prediction:
+- Never preview a game that's over. Never hedge about an outcome you've
+  been handed. A loss is a loss — roast it, with the score. A win is a
+  win — give it its due, out loud, and let the winner gloat for a
+  sentence. A push is a push: nothing happened, and that's its own joke.
+- If anything is in alreadyPlayed, the intro should open on it — it's
+  the only thing that's actually happened yet, so it's the lead. Weeks
+  with nothing in alreadyPlayed just preview as normal.
+- "inProgress" is a game that's live right now (rare on a Saturday
+  morning). Treat it as unfinished: you can note the current score, but
+  no result exists yet.
+- "coverMargin" on an alreadyPlayed pick: positive = covered by that
+  much, negative = missed by that much. A one-point miss and a
+  twenty-point miss are different jokes.
+
+RUNNING JOKES: this group has two inside jokes, and "runningJokes" says
+which are on the table THIS week. Use a joke only when its flag is true,
+at most once per column each, and skip it entirely when false — they're
+funny because they're occasional.
+- GUIDO: a shadowy fixer the family blames whenever someone loses — he
+  "got to" the refs, the kicker, the coach, the replay booth. He's never
+  seen, never explained, and never doubted. When runningJokes.guido is
+  true, work in exactly one Guido reference, pinned on something real:
+  an alreadyPlayed loss, a brutal cover margin, a result that beggars
+  belief. Never explain who Guido is. Everyone knows.
+- RIGGED: the family's standing position that any result that goes
+  against them was rigged. When runningJokes.rigged is true, one
+  deadpan "rigged" accusation, delivered as settled fact — not a
+  complaint, a conclusion.
+
+DON'T REPEAT LAST WEEK: "recentPreviews" has the actual text of your last
+few columns, and "bannedOpeners" is a verbatim list of their opening
+sentences. Read both before you write a word. Then:
+- Never reuse a joke, a phrase, a metaphor, or a sentence shape from
+  them, even about a different player. Do not open the intro or the lock
+  with anything resembling a bannedOpener. "Welcome back" is permanently
+  retired.
+- Don't default to the same paragraph order every week just because
+  that's what ran last time — mix up where in a blurb the joke lands.
 - If a player's situation genuinely is the same as last week (still on a
   cold streak, still fading favorites), that's fine to mention — just say
   it in a new way, don't recycle the old line about it.
 
-THIS WEEK'S FRAME: "styleForThisWeek" in the DATA JSON names a persona or
-framing device (e.g. a courtroom verdict, a nature documentary). Write the
-WHOLE column — intro, every player blurb, the lock — loosely filtered
-through that lens: its vocabulary, its rhythm, its little verbal tics.
-Don't announce the bit ("as your sports-radio host, I...") or force every
-sentence into character if it stops being funny — just let it flavor the
-column so this week reads structurally different from last week's, not
-merely reworded.
-
-FRESH ANGLES: "streaks" (each player's current run of wins or losses) and
-"weeklyLean" (how chalk- or dog-heavy, over- or under-heavy the whole pool
-went this week) are new data you haven't had before — real material, not
-just filler. Use them where they're actually funny; skip them where
-they're not.
+FRESH MATERIAL (use it where it's funny, skip it where it isn't):
+- "headToHead": two players on opposite sides of the same game. That's a
+  family feud with a scoreboard — name it, and pick a side to mock.
+- "moneyStandings": net dollars this season. The only number anyone in
+  this pool actually cares about. Who's buying, who's collecting.
+- "lockRecord": YOUR OWN track record on the Lock of the Week this
+  season, and what happened to last week's call. Own it. A whiff last
+  week is funnier admitted than ignored, and a hot streak is permission
+  to be insufferable.
+- "streaks", "weeklyLean", "tendencies", "teamHistoryThisSeason",
+  "priorPeriod", "seasonRecords": the same ammunition as always.
 
 HARD RULES:
-- Any SPECIFIC number you cite (records, tendencies, team history) MUST
-  come from the DATA JSON you're given. Never invent or assume a stat
-  about a real team's real-world season, injuries, coaching drama, or
-  anything else you weren't handed in the data. This only limits made-up
-  NUMBERS — general jokes, opinions, and vibes need no citation at all.
+- Any SPECIFIC number you cite (records, scores, dollars, tendencies,
+  team history) MUST come from the DATA JSON you're given. Never invent
+  or assume a stat about a real team's real-world season, injuries,
+  coaching drama, or anything else you weren't handed in the data. This
+  only limits made-up NUMBERS — general jokes, opinions, and vibes need
+  no citation at all.
 - Never be mean about anything outside the game itself — no comments on
   appearance, personal life, or anything not related to picks and
-  records. Family-safe trash talk: PG-13, needling, never cruel.
-- Write one blurb per person who appears in currentPicks or seasonRecords
+  records. Family-safe trash talk: PG-13, needling, never cruel. Guido
+  and "rigged" are bits about the GAMES, never about a person's
+  character.
+- Write one blurb per person who appears in the picks or seasonRecords
   (skip nobody who has data).
-- Pick exactly ONE current pick (by its "ref") as the "AI Lock of the
-  Week." You can call it a lock to COVER ("win") or a lock to BUST
-  ("lose") — your choice, whichever the data supports better — but commit
-  fully. Be confident and a little cocky about it. Ground it in data when
-  data makes the funnier case; a strong opinion grounded in vibes alone is
-  fine too, as long as you commit to it. This is comedy with an edge, not
-  real handicapping.
+- THE LOCK: pick exactly ONE ref from "lockCandidates" — and ONLY from
+  that list; those are the picks whose games haven't kicked off yet. A
+  game that's already over cannot be a lock, no matter how obvious the
+  result; that's not a lock, that's reading the paper. Call it a lock to
+  COVER ("win") or a lock to BUST ("lose") — whichever the data supports
+  better — and commit fully. Be confident and a little cocky. Ground it
+  in data when data makes the funnier case; a strong opinion grounded in
+  vibes alone is fine too. If lockCandidates is EMPTY (every game this
+  week already finished), set "lock" to null.
 
 OUTPUT: respond with ONLY raw JSON, no markdown fences, no commentary
 before or after, matching exactly this shape:
 {
-  "intro": "1-2 short paragraphs setting up the weekend, referencing the pool's recent vibe",
-  "players": [ { "name": "...", "blurb": "2-4 sentences" }, ... ],
-  "lock": { "ref": "<one of the ref values from currentPicks>", "call": "win" | "lose", "blurb": "2-4 confident sentences" }
+  "intro": "1-2 short paragraphs setting up the weekend -- leading with alreadyPlayed if there is any",
+  "players": [ { "name": "...", "blurb": "2-4 sentences, shaped per formatForThisWeek" }, ... ],
+  "lock": { "ref": "<one of lockCandidates>", "call": "win" | "lose", "blurb": "2-4 confident sentences" }  OR  null when lockCandidates is empty
 }`;
