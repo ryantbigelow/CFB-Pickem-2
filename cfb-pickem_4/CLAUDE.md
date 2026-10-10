@@ -139,6 +139,22 @@ anon-key insert or anyone with the URL can vandalize the season. Put writes
 behind a server-side route with a single shared passphrase in an env var. Crude,
 but right-sized for six family members.
 
+## Deploying: push to `main` after verifying — that IS the production deploy
+
+Vercel deploys production from `main` automatically; any other branch only
+ever gets a Preview that Ryan has to promote by hand. Ryan chose (October
+2026) to stop promoting by hand: **after a change is verified (tsc, build,
+the SQL suite when the schema moved), push it to `main` too.** A push to
+`main` goes live for the family immediately — the verification steps are
+the checkpoint now, there is no manual one after. Work still happens on
+the session's feature branch; `main` just follows it. Before pushing,
+confirm it's a fast-forward (`git merge-base --is-ancestor origin/main
+<branch>`); if `main` has somehow diverged, stop and ask rather than
+force-push. If a change needs a Supabase migration, say so in the same
+message — the code can be live before the migration is run (every
+migration is written to be safe in either order), but Ryan still has to
+run it.
+
 ## Resolved: editing and scores
 
 **Line on edit — the commissioner types it, pre-filled with the current line.**
