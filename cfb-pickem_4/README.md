@@ -49,7 +49,7 @@ checked, and Save.
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → the `service_role` key (click to reveal) |
 | `ODDS_API_KEY` | the-odds-api.com — emailed to you at signup |
 | `PICK_PASSPHRASE` | invent one; share it only with the six of you |
-| `ANTHROPIC_API_KEY` | console.anthropic.com → sign up → **API Keys** → **Create Key**. Powers the Saturday "Weekend Preview" — a few cents a week, billed to whatever card you put on that account |
+| `ANTHROPIC_API_KEY` | console.anthropic.com → sign up → **API Keys** → **Create Key**. Powers the Saturday "Weekend Preview" — one call a week, well under a dollar a month, billed to whatever card you put on that account |
 | `CRON_SECRET` | invent any random string (it's never shared with anyone) — this is how Vercel proves *to your own site* that a scheduled job, not a stranger, is calling it |
 
 **Then redeploy.** This is the step everyone misses: environment variables are

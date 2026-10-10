@@ -17,7 +17,14 @@ import { generateWeekendPreview, recordPreviewAttempt } from "@/lib/preview";
 import { authorizedForCron } from "@/lib/cronAuth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Five minutes, so Opus 5 (lib/preview.ts) has room to think and write a
+// six-player column without a hard kill mid-generation. On Vercel's Hobby
+// plan this needs Fluid Compute enabled on the project (it's the default
+// for projects created since 2025; otherwise Settings -> Functions). If a
+// deploy ever fails complaining about maxDuration, that's why -- enable
+// Fluid Compute rather than lowering this. lib/preview.ts aborts the
+// Claude call itself at 270s so a stall is recorded, not silently killed.
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);

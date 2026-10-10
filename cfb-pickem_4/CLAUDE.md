@@ -358,20 +358,42 @@ Central on a Saturday means `CRON_SECRET` is missing or mismatched in
 Vercel; anything else is the real error message. Check that line before
 anything else.
 
-**`max_tokens` has to cover thinking too, and it grew.** Sonnet 5 thinks by
+**`max_tokens` has to cover thinking too, and it grew.** The model thinks by
 default (adaptive), spending part of the response's token budget on
 invisible reasoning before it writes anything — that's not optional unless
-you explicitly disable it. The anti-repetition data above (last week's full
-column, streaks, weekly lean) made both the prompt and the model's
-reasoning about it bigger, and `max_tokens: 2500` — already thin — got a
-real response truncated mid-JSON (`stop_reason: "max_tokens"`) the very
-next week. Now `6000` with `output_config: { effort: "medium" }` to keep
-thinking bounded on what's a styled-writing task, not a reasoning-heavy
-one. If truncation ever recurs, that error message names the exact
-`stop_reason` — check that before assuming it's a repeat of the old
-"parsed the wrong content block" bug (a different failure with the same
-"invalid JSON" symptom, fixed separately — see the git history on this
-file).
+you explicitly disable it. The anti-repetition data above made both the
+prompt and the model's reasoning about it bigger, and `max_tokens: 2500`
+— already thin — got a real response truncated mid-JSON (`stop_reason:
+"max_tokens"`) one Saturday. If truncation ever recurs, that error message
+names the exact `stop_reason` — check that before assuming it's a repeat
+of the old "parsed the wrong content block" bug (a different failure with
+the same "invalid JSON" symptom, fixed separately — see the git history on
+this file).
+
+**It's Opus 5 now, with a five-minute route budget** (October 2026 —
+Ryan asked for both). `app/api/generate-preview/route.ts` has
+`maxDuration = 300`, which on Vercel's Hobby plan requires Fluid Compute
+on the project (default for projects created since 2025; otherwise
+Settings → Functions). A deploy that fails complaining about
+`maxDuration` means exactly that — enable Fluid Compute, don't lower the
+number. `lib/preview.ts` aborts the Claude call itself at 270s
+(`CLAUDE_TIMEOUT_MS`): a Vercel hard kill at the limit never reaches the
+catch block, so nothing would be recorded for the page to show, whereas
+our own abort is an ordinary, recorded error. `max_tokens` is 16000 and
+`effort` is `"high"` (the default) — time stopped being the constraint,
+and high effort is what Opus is for. The request also sends
+`fallbacks: "default"` under the `server-side-fallback-2026-07-01` beta
+header: Opus 5's safety classifiers can decline a request, and a column
+that jokes about a fixer rigging games could plausibly trip one; with
+this, a declined request is re-run server-side on Anthropic's recommended
+substitute instead of coming back as a refusal. `stop_reason: "refusal"`
+on the final response (every model in the chain declined) is checked
+explicitly before reading content, since a pre-output refusal has an
+empty content array that would otherwise masquerade as "invalid JSON."
+Model, header, and body field are per the `claude-api` skill's current
+reference, not recalled from training — re-check there before changing
+any of them. Cost: one call a week at Opus 5 rates is well under a dollar
+a month.
 
 **"Is it Saturday" is timezone-explicit** (`lib/time.ts`, `APP_TIMEZONE =
 "America/Chicago"`) — computed the same way regardless of what timezone the

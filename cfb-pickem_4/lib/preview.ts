@@ -29,7 +29,23 @@ import { mostRecentSeasonFor } from "./legacy-history";
 import { syncScores } from "./sync";
 import { APP_TIMEZONE } from "./time";
 
-const MODEL = "claude-sonnet-5";
+// Opus 5, now that the route has a 5-minute budget (app/api/generate-preview/
+// route.ts) instead of 60s. It's slower and a few times the price of Sonnet
+// -- still well under a dollar a month for one call a week -- and it's the
+// most direct lever on "smarter and funnier" there is.
+const MODEL = "claude-opus-5";
+// Opus 5's safety classifiers can decline a request (this column asks a
+// model to joke about a fixer named Guido rigging games -- a false positive
+// isn't unthinkable). "default" re-runs a declined request on Anthropic's
+// recommended substitute, server-side, instead of handing us a refusal. A
+// stop_reason of "refusal" on the final response means the whole chain
+// declined; that's checked explicitly in callClaude().
+const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+// Must stay comfortably under the route's maxDuration. A Vercel hard kill
+// at the limit never reaches the catch block, so nothing would get recorded
+// for the page to show; aborting the fetch ourselves first turns a stall
+// into an ordinary, recorded error.
+const CLAUDE_TIMEOUT_MS = 270_000;
 
 // The VOICE of the week's column. Picked deterministically per period (see
 // the hash below), never left to the model to choose -- that's what
@@ -508,19 +524,23 @@ async function callClaude(data: unknown): Promise<GeneratedContent> {
     headers: {
       "x-api-key": key,
       "anthropic-version": "2023-06-01",
+      "anthropic-beta": FALLBACK_BETA,
       "content-type": "application/json",
     },
+    signal: AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
     body: JSON.stringify({
       model: MODEL,
-      // Sonnet 5 thinks by default -- that reasoning draws from the same
-      // max_tokens budget as the actual column. 2500 once truncated a real
-      // response mid-JSON (stop_reason=max_tokens); the brief has grown
-      // again since (played-game recaps, head-to-heads, the lock record),
-      // so there's real headroom here. effort:"medium" keeps the thinking
-      // bounded on what's fundamentally a styled writing task, which is
-      // also what keeps this comfortably inside the route's 60s maxDuration.
-      max_tokens: 8000,
-      output_config: { effort: "medium" },
+      fallbacks: "default",
+      // Opus 5 thinks by default (adaptive) -- that reasoning draws from
+      // the same max_tokens budget as the actual column. 2500 once
+      // truncated a real response mid-JSON (stop_reason=max_tokens), and
+      // the brief has only grown since (played-game recaps, head-to-heads,
+      // the lock record). With a 5-minute route budget there's no reason
+      // to be thin here: 16000 is plenty for thinking plus a six-player
+      // column, and effort "high" (the default) is what we're paying Opus
+      // for. CLAUDE_TIMEOUT_MS is the real ceiling, not this number.
+      max_tokens: 16000,
+      output_config: { effort: "high" },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: JSON.stringify(data) }],
     }),
@@ -531,6 +551,14 @@ async function callClaude(data: unknown): Promise<GeneratedContent> {
   }
 
   const body = await res.json();
+  // A declined request comes back as HTTP 200 with stop_reason "refusal"
+  // (and, with fallbacks on, it means every model in the chain declined).
+  // Check it before touching content -- a pre-output refusal has an empty
+  // content array, which would otherwise read as "wasn't valid JSON."
+  if (body.stop_reason === "refusal") {
+    const category = body.stop_details?.category ?? "unspecified";
+    throw new Error(`Claude declined the request (refusal, category: ${category}).`);
+  }
   // Find the actual text block by type, don't assume it's content[0] --
   // a thinking block (or anything else) sorting first would otherwise
   // silently hand us `undefined`, coerced to an empty string, which is
