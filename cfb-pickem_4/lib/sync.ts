@@ -121,8 +121,9 @@ export async function syncScores(
           if (new Date(g.kickoff).getTime() < now) {
             console.warn(
               `[sync] no ESPN match for "${g.away_team} @ ${g.home_team}" ` +
-                `(kickoff ${g.kickoff}) -- check normalizeTeam() in lib/scores.ts ` +
-                `against ESPN's actual name for these teams`
+                `(kickoff ${g.kickoff}) -- the Scoreboard card flags this too; ` +
+                `compare our names to ESPN's (findEspnMatch in lib/scores.ts tries every ` +
+                `alias ESPN publishes) or pin games.espn_id by hand`
             );
           }
           continue;

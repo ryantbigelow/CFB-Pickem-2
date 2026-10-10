@@ -20,6 +20,12 @@ export type ScoreUpdate = {
   kickoff: string;
   homeTeam: string;
   awayTeam: string;
+  // Every name ESPN has for each team -- full ("Appalachian State
+  // Mountaineers"), short ("App State"), location ("Appalachian State").
+  // Matching tries all of them, so the two feeds' naming habits don't
+  // have to agree (see findEspnMatch).
+  homeNames: string[];
+  awayNames: string[];
   homeScore: number | null;
   awayScore: number | null;
   status: GameStatus;
@@ -68,6 +74,8 @@ export async function fetchScores(date?: string): Promise<ScoreUpdate[]> {
         kickoff: ev.date,
         homeTeam: home.team?.displayName ?? "",
         awayTeam: away.team?.displayName ?? "",
+        homeNames: teamNames(home.team),
+        awayNames: teamNames(away.team),
         homeScore: started ? toScore(home.score) : null,
         awayScore: started ? toScore(away.score) : null,
         status,
@@ -98,6 +106,23 @@ function toTv(comp: any): string | null {
   }
   const uniq = [...new Set(names)];
   return uniq.length ? uniq.slice(0, 2).join(" / ") : null;
+}
+
+/**
+ * Every name ESPN has for a team, de-duplicated: "Appalachian State
+ * Mountaineers" / "App State" / "Appalachian State". The two feeds don't
+ * share naming habits (The Odds API said "App State"; ESPN's full name is
+ * "Appalachian State Mountaineers" -- not a substring either way), but
+ * ESPN publishes its own aliases, so there's no list to hand-maintain.
+ * The mascot alone ("Mountaineers") and the 3-letter abbreviation are
+ * deliberately left out -- too short and too shared to match on.
+ */
+function teamNames(team: any): string[] {
+  const out: string[] = [];
+  for (const n of [team?.displayName, team?.shortDisplayName, team?.location]) {
+    if (typeof n === "string" && n.trim() && !out.includes(n)) out.push(n);
+  }
+  return out;
 }
 
 const toScore = (s: unknown): number | null => {
@@ -159,27 +184,16 @@ export function normalizeTeam(name: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, "")
+    // Apostrophes and periods vanish ("Hawai'i" -> "hawaii", "St." -> "st");
+    // every other punctuation mark becomes a SPACE, so "Louisiana-Monroe"
+    // is "louisiana monroe", not "louisianamonroe" -- deleting the hyphen
+    // used to glue the words together and break the match against "UL
+    // Monroe" / "Louisiana Monroe".
+    .replace(/['’ʻʼ.]/g, "")
+    .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\b(university|state university|the)\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-/** True when both teams and the kickoff day line up. */
-export function sameGame(
-  a: { homeTeam: string; awayTeam: string; kickoff: string },
-  b: { homeTeam: string; awayTeam: string; kickoff: string }
-): boolean {
-  const day = (d: string) => new Date(d).toISOString().slice(0, 10);
-  if (day(a.kickoff) !== day(b.kickoff)) return false;
-
-  const [ah, aa] = [normalizeTeam(a.homeTeam), normalizeTeam(a.awayTeam)];
-  const [bh, ba] = [normalizeTeam(b.homeTeam), normalizeTeam(b.awayTeam)];
-
-  const hit = (x: string, y: string) =>
-    x === y || x.includes(y) || y.includes(x);
-
-  return hit(ah, bh) && hit(aa, ba);
 }
 
 export type GameRef = { homeTeam: string; awayTeam: string; kickoff: string };
@@ -190,42 +204,65 @@ export type MatchResult =
   | { kind: "none" };
 
 /**
- * Find the one ESPN event for a game of ours, in two passes -- this is
- * what actually closed the Virginia/West Virginia bug, not a normalizeTeam()
- * tweak (there's nothing wrong to fix in either team's name).
+ * Find the one ESPN event for a game of ours. Built to never guess, never
+ * miss a game just because the two feeds spell it differently, and fail
+ * loudly when it can't tell -- each of those has cost a real grade once
+ * (a wrong match: Virginia / West Virginia; a missed one: "App State" vs
+ * "Appalachian State Mountaineers", not a substring either way).
  *
- *  1. EXACT match (both team names identical once normalized) first,
- *     always -- it's inherently unambiguous whenever it exists, so it's
- *     tried before the fuzzy pass gets a say at all.
- *  2. FUZZY match (sameGame()'s substring/superstring rule, for real
- *     naming mismatches like "Miami" vs "Miami Hurricanes") -- but ONLY
- *     when it identifies exactly one candidate.
+ * Every tier compares our two names against EVERY name ESPN has for a
+ * team (homeNames/awayNames: full, short, location), and a tier only wins
+ * when it identifies exactly one event. Two or more candidates at a tier
+ * is "ambiguous": stop there, don't fall through to a looser tier, let a
+ * human pin games.espn_id. A loose match that isn't unique is a wrong
+ * score, not a near miss.
  *
- * The fuzzy rule is deliberately loose, and that's exactly the problem:
- * "Virginia" is a genuine substring of BOTH "West Virginia" and "Virginia
- * Tech" -- three different real programs, any two of which can easily
- * kick off on the same Saturday. The old code took whichever candidate
- * `.find()` happened to hit first, which doesn't just risk a missed sync
- * -- it risks silently grading a pick against the WRONG game's score. If
- * the fuzzy pass can't narrow it to exactly one candidate, this returns
- * "ambiguous" instead of guessing, so it surfaces as a loud warning
- * instead of a wrong result.
+ *  1. EXACT, both teams, same day.
+ *  2. EXACT, either team, same day -- checked against both of the event's
+ *     sides, so swapped home/away (neutral sites) can't break it. A team
+ *     plays once a day, so one exact team on the right day identifies the
+ *     game by itself. This is the tier that catches "App State": the
+ *     other team, Old Dominion, is spelled the same in both feeds.
+ *  3-4. The same two, widened to the adjacent days -- the feeds can
+ *     disagree on the date (The Odds API lists a TBD kickoff at a
+ *     placeholder time; a late game straddles midnight UTC).
+ *  5. FUZZY (substring either way), both teams, same day.
+ *  6. FUZZY, either team, same day.
+ *
+ * The fuzzy tiers never widen past the day. Loose AND wide is how you get
+ * the wrong game.
  */
 export function findEspnMatch(ours: GameRef, events: ScoreUpdate[]): MatchResult {
-  const day = (d: string) => new Date(d).toISOString().slice(0, 10);
-  const sameDay = events.filter((e) => day(e.kickoff) === day(ours.kickoff));
+  const dayOf = (d: string) => Math.floor(new Date(d).getTime() / 86_400_000);
+  const ourDay = dayOf(ours.kickoff);
+  const sameDay = events.filter((e) => dayOf(e.kickoff) === ourDay);
+  const nearDay = events.filter((e) => Math.abs(dayOf(e.kickoff) - ourDay) <= 1);
 
   const [oh, oa] = [normalizeTeam(ours.homeTeam), normalizeTeam(ours.awayTeam)];
-  const exact = sameDay.filter(
-    (e) => normalizeTeam(e.homeTeam) === oh && normalizeTeam(e.awayTeam) === oa
-  );
-  if (exact.length === 1) return { kind: "matched", event: exact[0] };
-  if (exact.length > 1) return { kind: "ambiguous", candidates: exact };
+  const norm = (names: string[]) => names.map(normalizeTeam);
+  const exactIn = (x: string, names: string[]) => norm(names).includes(x);
+  const fuzzyIn = (x: string, names: string[]) =>
+    norm(names).some((n) => n === x || n.includes(x) || x.includes(n));
+  const all = (e: ScoreUpdate) => [...e.homeNames, ...e.awayNames];
 
-  const fuzzy = sameDay.filter((e) => sameGame(ours, e));
-  if (fuzzy.length === 1) return { kind: "matched", event: fuzzy[0] };
-  if (fuzzy.length > 1) return { kind: "ambiguous", candidates: fuzzy };
+  const bothExact = (e: ScoreUpdate) => exactIn(oh, e.homeNames) && exactIn(oa, e.awayNames);
+  const eitherExact = (e: ScoreUpdate) => exactIn(oh, all(e)) || exactIn(oa, all(e));
+  const bothFuzzy = (e: ScoreUpdate) => fuzzyIn(oh, e.homeNames) && fuzzyIn(oa, e.awayNames);
+  const eitherFuzzy = (e: ScoreUpdate) => fuzzyIn(oh, all(e)) || fuzzyIn(oa, all(e));
 
+  const tiers: [ScoreUpdate[], (e: ScoreUpdate) => boolean][] = [
+    [sameDay, bothExact],
+    [sameDay, eitherExact],
+    [nearDay, bothExact],
+    [nearDay, eitherExact],
+    [sameDay, bothFuzzy],
+    [sameDay, eitherFuzzy],
+  ];
+  for (const [pool, test] of tiers) {
+    const hits = pool.filter(test);
+    if (hits.length === 1) return { kind: "matched", event: hits[0] };
+    if (hits.length > 1) return { kind: "ambiguous", candidates: hits };
+  }
   return { kind: "none" };
 }
 

@@ -119,6 +119,14 @@ function Card({ p }: { p: LivePick }) {
         <span>{p.home_score ?? "–"}</span>
       </div>
 
+      {/* A game ESPN matching couldn't place gets no scores, no grade, no
+          link, and no channel -- and used to sit there silently until
+          someone noticed the grade was missing. Say so on the card. The
+          fix is in lib/scores.ts (findEspnMatch) or, for a one-off, pin
+          games.espn_id by hand in Supabase. */}
+      {!p.espn_id && (
+        <div className="unmatched">Not matched to ESPN yet — no live score until it is</div>
+      )}
       <div className="bet" style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
         <span>{p.bet}</span>
         {started && state && <span className={`pill ${state}`}>{word}</span>}

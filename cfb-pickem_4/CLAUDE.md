@@ -159,8 +159,23 @@ in. The Scoreboard card shows it ahead of the kickoff time and drops it
 once the game's final.
 
 **Team-name matching is the known fragile point.** Games come from The Odds API,
-scores from ESPN, and the two don't name teams identically. `sameGame()` matches
-on normalized name AND kickoff day, never name alone.
+scores from ESPN, and the two don't name teams identically. `findEspnMatch()`
+(`lib/scores.ts`) matches on normalized name AND kickoff day, never name
+alone — and against **every** name ESPN publishes for a team (full, short,
+location: "Appalachian State Mountaineers" / "App State" / "Appalachian
+State"), not just the full one. That's what closed the "App State" miss in
+October 2026: The Odds API said "App State," ESPN's full name isn't a
+substring of it either way, and the game sat unmatched — no scores, no
+grade, no link, no channel — with only a Vercel log line to say so.
+Two guarantees now: (1) one exactly-matched team on the right day is
+enough (a team plays once a day, so it's unique by construction) and the
+date is allowed to disagree by a day for exact matches; (2) **any game
+still unmatched shows a visible "Not matched to ESPN yet" flag on its
+Scoreboard card**, so a miss can't go unnoticed until a grade is wrong.
+A flagged game is fixed by making the names match in `findEspnMatch()`'s
+tiers or, for a one-off, pinning `games.espn_id` by hand in Supabase.
+Punctuation becomes a space during normalization ("Louisiana-Monroe" is
+"louisiana monroe"), apostrophes vanish ("Hawai'i" is "hawaii").
 
 **`games.espn_id` is now actually persisted** (`lib/sync.ts`, on every
 match) — the comment above said to do this for a while before the column
@@ -200,13 +215,19 @@ silently — not a missed sync, a **wrong score attached to the game**.
 
 Fixed with `findEspnMatch()` in `lib/scores.ts`, used by `lib/sync.ts`
 instead of a bare `.find()`:
-1. Try an EXACT normalized-name match first — inherently unambiguous
-   whenever one exists.
-2. Fall back to the fuzzy rule only when it narrows to exactly ONE
-   candidate. Two or more candidates now returns `"ambiguous"` — logged
-   loudly with every candidate's team names and ESPN id — rather than
-   guessing. That game just doesn't auto-grade until `games.espn_id` is
-   set by hand (Supabase table editor) to the correct one.
+1. Tiers, strictest first, each against every alias ESPN publishes for a
+   team: EXACT both teams → EXACT either team (a team plays once a day,
+   so one is enough; checked against both of the event's sides so a
+   swapped home/away can't break it) → the same two widened to the
+   adjacent days → FUZZY (substring) both teams → FUZZY either team. The
+   fuzzy tiers never widen past the day: loose *and* wide is how you get
+   the wrong game.
+2. A tier only wins when it identifies exactly ONE candidate. Two or more
+   returns `"ambiguous"` — stop there, don't fall through to a looser
+   tier — logged loudly with every candidate's team names and ESPN id,
+   rather than guessing. That game just doesn't auto-grade until
+   `games.espn_id` is set by hand (Supabase table editor) to the correct
+   one, and its Scoreboard card says so.
 3. **A game that already has an `espn_id` skips name-matching entirely**
    on every later sync — an exact id lookup in ESPN's event list. This
    was the original intent of persisting `espn_id` in the first place
