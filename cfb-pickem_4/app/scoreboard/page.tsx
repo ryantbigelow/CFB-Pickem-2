@@ -100,6 +100,10 @@ function Card({ p }: { p: LivePick }) {
       <div className="top">
         <span>{p.player}</span>
         <span>
+          {/* Channel first ("ESPN · 2:30 PM"), dropped once the game's
+              over -- nobody needs to know where a finished game aired.
+              Null until ESPN publishes the assignment (lib/scores.ts). */}
+          {p.status !== "final" && p.tv ? `${p.tv} · ` : ""}
           {p.status === "final"
             ? "Final"
             : p.period_clock ?? <LocalTime iso={p.kickoff} />}

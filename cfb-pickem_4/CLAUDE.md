@@ -150,7 +150,13 @@ Never auto-apply a line change to an existing pick.
 unlimited, so we can poll through a Saturday. It's undocumented, so the client
 is written defensively: a missing field yields a stale score, never a crash. If
 scores stop updating, look there first. CollegeFootballData stays as the
-fallback and its key is still in `.env.example`.
+fallback and its key is still in `.env.example`. The same event also
+supplies the TV channel (`games.tv`, `db/migrate-008.sql`; `toTv()` in
+`lib/scores.ts` reads `broadcasts[].names`, falling back to
+`geoBroadcasts` minus radio) — null until ESPN publishes the assignment,
+usually about a week out, and refreshed on every sync, so it fills itself
+in. The Scoreboard card shows it ahead of the kickoff time and drops it
+once the game's final.
 
 **Team-name matching is the known fragile point.** Games come from The Odds API,
 scores from ESPN, and the two don't name teams identically. `sameGame()` matches

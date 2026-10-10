@@ -141,6 +141,7 @@ export async function syncScores(
           period_clock: hit.clock,
           scores_updated: stamp,
           espn_id: hit.espnId,
+          tv: hit.tv,
         })
         .eq("id", g.id);
     }

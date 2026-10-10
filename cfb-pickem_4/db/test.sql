@@ -312,3 +312,14 @@ where s.label='t12' and pl.name='T12B';
 select case when count(*) = 0 then 'CORRECT -- everyone has picked, no one left'
        else 'WRONG -- next_picker still returned someone' end as everyone_done_check
 from next_picker((select pe.id from periods pe join seasons s on s.id=pe.season_id where s.label='t12'));
+
+\echo ''
+\echo '=== TEST 13: live_picks carries games.tv through, for the Scoreboard card ==='
+update games set tv = 'ESPN / ESPN2'
+where external_id = 'e1' and period_id in (select id from periods where seq = 1);
+
+select bet, tv from live_picks
+where home_team = 'Alabama' and away_team = 'Auburn' and tv is not null;
+
+select case when tv is null then 'UNANNOUNCED GAME STILL NULL (correct)' end as unannounced_check
+from live_picks where home_team = 'Georgia' and away_team = 'Clemson' limit 1;

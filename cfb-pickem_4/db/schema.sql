@@ -109,6 +109,8 @@ create table games (
                  check (status in ('scheduled','in_progress','final','cancelled')),
   espn_id        text,              -- ESPN's event id, once matched -- links
                                      -- the Scoreboard card to the real game
+  tv             text,              -- broadcast ('ABC', 'ESPN / ESPN2'), from
+                                     -- the same ESPN event; null until known
 
   unique (period_id, external_id)
 );
@@ -393,7 +395,8 @@ select pk.id as pick_id, g.period_id, pl.name as player,
          when pk.side = 'over'  then (g.home_score + g.away_score) - pk.line
          else pk.line - (g.home_score + g.away_score)
        end as margin,         -- > 0 covering, < 0 losing, = 0 push
-       g.espn_id               -- kept LAST -- CREATE OR REPLACE VIEW refuses
+       g.espn_id,
+       g.tv                    -- new columns go LAST -- CREATE OR REPLACE VIEW refuses
                                 -- to insert a column anywhere but the end
                                 -- (it reads that as renaming every column
                                 -- after it) -- see db/migrate-005.sql

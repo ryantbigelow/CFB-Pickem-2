@@ -33,7 +33,8 @@ to an already-deployed site**, also run `db/migrate-003.sql` the same way.
 site**, also run `db/migrate-005.sql` the same way. **If you're adding the
 Picks page's "Up next" indicator**, also run `db/migrate-006.sql`. **If
 you're adding the Picks page's per-week date filtering and ESPN links**,
-also run `db/migrate-007.sql`.
+also run `db/migrate-007.sql`. **If you're adding the Scoreboard's TV
+channel**, also run `db/migrate-008.sql`.
 
 ### Adding the environment variables in Vercel
 

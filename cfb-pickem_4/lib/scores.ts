@@ -24,6 +24,7 @@ export type ScoreUpdate = {
   awayScore: number | null;
   status: GameStatus;
   clock: string | null; // '3rd 04:12'
+  tv: string | null; // 'ABC', 'ESPN / ESPN2'; null until ESPN publishes it
 };
 
 /**
@@ -71,9 +72,32 @@ export async function fetchScores(date?: string): Promise<ScoreUpdate[]> {
         awayScore: started ? toScore(away.score) : null,
         status,
         clock: toClock(comp.status),
+        tv: toTv(comp),
       },
     ];
   });
+}
+
+/**
+ * 'ABC', 'ESPN / ESPN2', or null. ESPN lists the national broadcast under
+ * `broadcasts[].names`; `geoBroadcasts` is the fuller list (TV, web,
+ * radio) and is the fallback when the first is empty. Radio is skipped --
+ * nobody's looking for the game on the radio from a scoreboard. Null
+ * until ESPN publishes an assignment, which for college football is
+ * usually a week or so out; every sync re-reads it, so it fills itself in.
+ */
+function toTv(comp: any): string | null {
+  const names: string[] = [];
+  for (const b of comp?.broadcasts ?? [])
+    for (const n of b?.names ?? []) if (typeof n === "string" && n) names.push(n);
+  if (!names.length) {
+    for (const g of comp?.geoBroadcasts ?? []) {
+      const n = g?.media?.shortName;
+      if (typeof n === "string" && n && g?.type?.shortName !== "Radio") names.push(n);
+    }
+  }
+  const uniq = [...new Set(names)];
+  return uniq.length ? uniq.slice(0, 2).join(" / ") : null;
 }
 
 const toScore = (s: unknown): number | null => {
